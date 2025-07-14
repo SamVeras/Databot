@@ -55,11 +55,20 @@ class Lad(commands.Bot):
         )
 
         if isinstance(error, commands.MissingPermissions):
-            await ctx.send("Você não tem permissão para usar este comando.")
+            try:
+                await ctx.send("Você não tem permissão para usar este comando.")
+            except discord.Forbidden:
+                print("Bot não tem permissão para enviar mensagens neste canal.")
         elif isinstance(error, commands.CommandNotFound):
-            await ctx.send("Comando não encontrado.")
+            try:
+                await ctx.send("Comando não encontrado.")
+            except discord.Forbidden:
+                print("Bot não tem permissão para enviar mensagens neste canal.")
         else:
-            await ctx.send(f"Erro: {error}.")
+            try:
+                await ctx.send(f"Erro: {error}.")
+            except discord.Forbidden:
+                print(f"Erro: {error} (Bot não tem permissão para enviar mensagens neste canal)")
 
 
 intents = discord.Intents.default()
