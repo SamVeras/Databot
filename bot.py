@@ -34,7 +34,7 @@ class Lad(commands.Bot):
             await self.add_cog(cog(self))
             logging.info(f"Cog {cog.__name__} carregado com sucesso.")
 
-    async def on_command_completion(self, ctx):
+    async def on_command(self, ctx):
         timestamp = ctx.message.created_at
         command = ctx.command.name
         user = ctx.author
