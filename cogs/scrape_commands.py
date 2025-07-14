@@ -1,6 +1,7 @@
 from discord.ext import commands
 import csv
 from datetime import datetime
+import os
 
 
 class ScrapeCommands(commands.Cog):
@@ -16,10 +17,13 @@ class ScrapeCommands(commands.Cog):
         filename = f"scraped_data_{guild.name}_{channel.name}_{timestamp}.csv"
         filename = "".join(c for c in filename if c.isalnum() or c in (" ", "-", "_", ".")).rstrip()
 
+        os.makedirs("scraped_data", exist_ok=True)
+        filepath = os.path.join("scraped_data", filename)
+
         print(f"Iniciando coleta de dados do canal {channel.name}...")
         await ctx.send(f"Iniciando coleta de dados do canal {channel.name}...")
 
-        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+        with open(filepath, "w", newline="", encoding="utf-8") as csvfile:
             writer = csv.DictWriter(
                 csvfile,
                 fieldnames=[
@@ -36,7 +40,6 @@ class ScrapeCommands(commands.Cog):
             writer.writeheader()
 
             message_count = 0
-
             async for message in channel.history(limit=None, oldest_first=True):
                 content = message.content.replace('"', '""')
                 content = message.content.replace("\n", "\\n")
@@ -58,5 +61,5 @@ class ScrapeCommands(commands.Cog):
                 if message_count % 100 == 0:
                     print(f"{message_count} mensagens processadas...")
 
-        print(f"Coleta concluída. {message_count} mensagens salvas em {filename}.")
-        await ctx.send(f"{message_count} mensagens salvas em {filename}.")
+        print(f"{message_count} mensagens salvas em {filepath}.")
+        await ctx.send(f"{message_count} mensagens salvas em {filepath}.")
