@@ -4,9 +4,15 @@ from discord.ext import commands
 from cogs.test_commands import TestCommands
 from cogs.scrape_commands import ScrapeCommands
 import logging
+import signal
+import sys
 
 
 class Lad(commands.Bot):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._shutdown = False
+
     async def on_ready(self):
         logging.info(f"Logado como {self.user}.")
         try:
@@ -16,6 +22,12 @@ class Lad(commands.Bot):
                 logging.info(f"Comando registrado: {synced_command.name}")
         except Exception as e:
             logging.error(f"Falha ao sincronizar comandos: {e}")
+
+    async def close(self):
+        if not self._shutdown:
+            self._shutdown = True
+            logging.info("Bot está sendo desligado...")
+        await super().close()
 
     async def setup_hook(self):
         for cog in [TestCommands, ScrapeCommands]:
@@ -76,6 +88,15 @@ logging.basicConfig(
     handlers=[logging.FileHandler("bot.log"), logging.StreamHandler()],
 )
 
+
+def signal_handler(signum, frame):
+    logging.info(f"Recebido sinal {signum}, desligando bot...")
+    if "bot" in globals():
+        import asyncio
+
+        asyncio.create_task(bot.close())
+
+
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -85,4 +106,15 @@ if __name__ == "__main__":
         exit(1)
 
     bot = Lad(command_prefix=BOT_PREFIX, intents=intents)
-    bot.run(DISCORD_TOKEN)
+
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        bot.run(DISCORD_TOKEN)
+    except KeyboardInterrupt:
+        logging.info("Interrupção do teclado detectada, desligando bot...")
+    except Exception as e:
+        logging.error(f"Erro inesperado: {e}")
+    finally:
+        logging.info("Bot desligado.")
