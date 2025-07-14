@@ -8,9 +8,8 @@ class ScrapeCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="scrape", description="Coletar dados")
-    @commands.has_permissions(administrator=True)
-    async def scrape(self, ctx):
+    async def _scrape_channel(self, ctx, silent=False):
+        """Internal method to scrape channel data"""
         channel = ctx.channel
         guild = ctx.guild
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -21,7 +20,8 @@ class ScrapeCommands(commands.Cog):
         filepath = os.path.join("scraped_data", filename)
 
         print(f"Iniciando coleta de dados do canal {channel.name}...")
-        await ctx.send(f"Iniciando coleta de dados do canal {channel.name}...")
+        if not silent:
+            await ctx.send(f"Iniciando coleta de dados do canal {channel.name}...")
 
         with open(filepath, "w", newline="", encoding="utf-8") as csvfile:
             writer = csv.DictWriter(
@@ -61,5 +61,16 @@ class ScrapeCommands(commands.Cog):
                 if message_count % 100 == 0:
                     print(f"{message_count} mensagens processadas...")
 
-        print(f"{message_count} mensagens salvas em {filepath}.")
-        await ctx.send(f"{message_count} mensagens salvas em {filepath}.")
+            print(f"{message_count} mensagens salvas em {filepath}.")
+        if not silent:
+            await ctx.send(f"{message_count} mensagens salvas em {filepath}.")
+
+    @commands.hybrid_command(name="scrape", description="Coletar dados")
+    @commands.has_permissions(administrator=True)
+    async def scrape(self, ctx):
+        await self._scrape_channel(ctx, silent=False)
+
+    @commands.hybrid_command(name="scrapesilent", description="Coletar dados silenciosamente")
+    @commands.has_permissions(administrator=True)
+    async def scrapesilent(self, ctx):
+        await self._scrape_channel(ctx, silent=True)
