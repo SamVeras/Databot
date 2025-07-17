@@ -4,6 +4,7 @@ import pymongo
 from datetime import timezone
 from config import MONGO_URI, BATCH_SIZE
 import discord
+import asyncio
 
 
 class ScrapeCommands(commands.Cog):
@@ -208,9 +209,10 @@ class ScrapeCommands(commands.Cog):
                 count += 1
 
                 if len(batch) >= BATCH_SIZE:
-                    self.collection.bulk_write(batch, ordered=False)
+                    await asyncio.to_thread(self.collection.bulk_write, batch, ordered=False)
                     batch.clear()
                     logging.info(f"Bulk wrote {BATCH_SIZE} messages...")
+                    await asyncio.sleep(0)
             except Exception as e:
                 errors += 1
                 logging.error(f"Erro ao salvar mensagem {message.id}: {e}")
@@ -218,7 +220,7 @@ class ScrapeCommands(commands.Cog):
                 logging.info(f"Processadas: {count}, Salvas: {saved_count}, Puladas: {skipped_count}, Erros: {errors}")
 
         if batch:
-            self.collection.bulk_write(batch, ordered=False)
+            await asyncio.to_thread(self.collection.bulk_write, batch, ordered=False)
             logging.info(f"Bulk wrote final {len(batch)} messages...")
 
         total_in_db = self.collection.count_documents({})
