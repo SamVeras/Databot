@@ -223,7 +223,7 @@ class ScrapeCommands(commands.Cog):
 
     @staticmethod
     async def show_message(message, ctx):
-        content = message.get("content_clean") or "[sem conteúdo]"
+        content = message.get("content_clean") or ""
         author = message["author"]["name"] if message.get("author") else "Desconhecido"
         channel = message["channel"]["name"] if message.get("channel") else "não sei onde"
         jump_url = message.get("jump_url")
@@ -236,6 +236,12 @@ class ScrapeCommands(commands.Cog):
                 description=embed_data.get("description"),
                 url=embed_data.get("url"),
             )
+
+            if embed_data.get("image") and embed_data["image"].get("url"):
+                embed.set_image(url=embed_data.get("image").get("url"))
+
+            if embed_data.get("thumbnail") and embed_data["thumbnail"].get("url"):
+                embed.set_thumbnail(url=embed_data.get("thumbnail").get("url"))
 
         await ctx.send(content=f"**{author}** em **#{channel}** disse: {jump_url}\n>>> {content}", embed=embed)
 
