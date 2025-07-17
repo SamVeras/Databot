@@ -3,8 +3,10 @@ import discord
 from discord.ext import commands
 from cogs.test_commands import TestCommands
 from cogs.scrape_commands import ScrapeCommands
+from cogs.admin_commands import AdminCommands
 import logging
 import signal
+import os
 import sys
 
 
@@ -23,6 +25,9 @@ class Lad(commands.Bot):
         except Exception as e:
             logging.error(f"Falha ao sincronizar comandos: {e}")
 
+    def restart(self):
+        os.execv(sys.executable, ["python"] + sys.argv)
+
     async def close(self):
         if not self._shutdown:
             self._shutdown = True
@@ -30,7 +35,7 @@ class Lad(commands.Bot):
         await super().close()
 
     async def setup_hook(self):
-        for cog in [TestCommands, ScrapeCommands]:
+        for cog in [TestCommands, ScrapeCommands, AdminCommands]:
             await self.add_cog(cog(self))
             logging.info(f"Cog {cog.__name__} carregado com sucesso.")
 
@@ -99,6 +104,11 @@ def signal_handler(signum, frame):
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
+intents.members = True
+intents.reactions = True
+intents.presences = True
+intents.messages = True
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
