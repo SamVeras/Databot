@@ -110,7 +110,7 @@ class ScrapeCommands(commands.Cog):
             poll = message.poll
             message_dict["poll"] = {
                 "question": getattr(poll, "question", None),
-                "duration": getattr(poll, "duration", None),
+                "duration": poll.duration.total_seconds() if poll.duration else None,
                 "multiple_choice": getattr(poll, "multiple", None),
                 "answers": [
                     {
