@@ -14,60 +14,58 @@ class ScrapeCommands(commands.Cog):
 
     @staticmethod
     async def message_to_dict(message):
-        return {
-            "id": getattr(message, "id", None),
-            "author": ({"id": message.author.id, "name": message.author.name}),
+        msg_dict = {
+            "id": message.id,
+            "type": message.type.value,
+            "tts": message.tts,
+            "flags": message.flags.value,
+            "mention_everyone": getattr(message, "mention_everyone", False),
+            "webhook_id": getattr(message, "webhook_id", None),
+            "author": {
+                "id": message.author.id,
+                "name": message.author.name,
+            },
             "content_raw": message.content,
             "content_clean": message.clean_content,
             "creation_date": message.created_at,
             "edit_date": getattr(message, "edited_at", None),
             "is_pinned": message.pinned,
             "channel": {
-                "id": getattr(message.channel, "id", None),
-                "name": getattr(message.channel, "name", None),
+                "id": message.channel.id,
+                "name": message.channel.name,
             },
+            "channel_mentions": getattr(message, "channel_mentions", []),
             "guild": {
                 "id": getattr(message.guild, "id", None),
                 "name": getattr(message.guild, "name", None),
             },
-            "reference": (
-                {
-                    "id": getattr(message.reference, "message_id", None),
-                    "channel_id": getattr(message.reference, "channel_id", None),
-                    "guild_id": getattr(message.reference, "guild_id", None),
-                }
-            ),
+            "mentions": [{"id": user.id, "name": user.name} for user in message.mentions],
+            "mention_roles": getattr(message, "mention_roles", []),
             "embeds": [
                 {
                     "title": embed.title,
-                    "type": embed.type,
+                    "type": embed.type.name,
                     "description": embed.description,
                     "url": embed.url,
                 }
                 for embed in message.embeds
             ],
-            "reactions": [
+            "attachments": [
                 {
-                    "emoji": reaction.emoji,
-                    "count": reaction.count,
+                    "id": attach.id,
+                    "url": attach.url,
+                    "proxy_url": attach.proxy_url,
+                    "filename": attach.filename,
+                    "content_type": attach.content_type,
+                    "spoiler": attach.is_spoiler(),
+                    "size": attach.size,
+                    "width": getattr(attach, "width", None),
+                    "height": getattr(attach, "height", None),
+                    "duration_secs": getattr(attach, "duration_secs", None),
                 }
-                for reaction in message.reactions
+                for attach in message.attachments
             ],
-            "mentions": [
-                {
-                    "id": user.id,
-                    "name": user.name,
-                }
-                for user in message.mentions
-            ],
-            "mentions_roles": [
-                {
-                    "id": role.id,
-                    "name": role.name,
-                    "color": getattr(role.color, "value", None),
-                }
-                for role in message.role_mentions
-            ],
+            "reactions": [{"emoji": str(react.emoji), "count": react.count} for react in message.reactions],
             "stickers": [
                 {
                     "id": sticker.id,
@@ -77,47 +75,40 @@ class ScrapeCommands(commands.Cog):
                 }
                 for sticker in message.stickers
             ],
-            "attachments": [
-                {
-                    "id": attachment.id,
-                    "url": getattr(attachment, "url", None),
-                    "filename": getattr(attachment, "filename", None),
-                    "content_type": getattr(attachment, "content_type", None),
-                    "spoiler": attachment.is_spoiler(),
-                    "size": getattr(attachment, "size", None),
-                    "width": getattr(attachment, "width", None),
-                    "height": getattr(attachment, "height", None),
-                    "duration_secs": getattr(attachment, "duration_secs", None),
-                }
-                for attachment in message.attachments
-            ],
-            "poll": (
-                {
-                    "question": getattr(message.poll, "question", None),  # str
-                    "duration": getattr(message.poll, "duration", None),  # datetime.timedelta
-                    "multiple_choice": getattr(message.poll, "multiple", None),  # bool
-                    "answers": [
-                        {
-                            "id": getattr(answer, "id", None),  # int
-                            "emoji": getattr(answer, "emoji", None),  # str
-                            "text": getattr(answer, "text", None),  # str
-                            "count": getattr(answer, "vote_count", None),  # int
-                            "victor": getattr(answer, "victor", None),  # bool
-                            "voters": [
-                                {
-                                    "id": getattr(voter, "id", None),  # int
-                                    "name": getattr(voter, "name", None),  # str
-                                }
-                                async for voter in answer.voters()
-                            ],  # list
-                        }
-                        for answer in message.poll.answers
-                    ],
-                }
-                if hasattr(message, "poll") and message.poll
-                else None
-            ),
+            "components": getattr(message, "components", []),
         }
+
+        if message.reference:
+            msg_dict["reference"] = {
+                "id": message.reference.message_id,
+                "channel_id": message.reference.channel_id,
+                "guild_id": message.reference.guild_id,
+            }
+        else:
+            msg_dict["reference"] = None
+
+        if getattr(message, "poll", None):
+            poll = message.poll
+            msg_dict["poll"] = {
+                "question": getattr(poll, "question", None),
+                "duration": getattr(poll, "duration", None),
+                "multiple_choice": getattr(poll, "multiple", None),
+                "answers": [
+                    {
+                        "id": getattr(answer, "id", None),
+                        "emoji": getattr(answer, "emoji", None),
+                        "text": getattr(answer, "text", None),
+                        "count": getattr(answer, "vote_count", None),
+                        "victor": getattr(answer, "victor", None),
+                        "voters": [{"id": v.id, "name": v.name} async for v in answer.voters()],
+                    }
+                    for answer in poll.answers
+                ],
+            }
+        else:
+            msg_dict["poll"] = None
+
+        return msg_dict
 
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)
@@ -125,5 +116,12 @@ class ScrapeCommands(commands.Cog):
         """Coletar dados do canal e guarda em um arquivo."""
         logging.info(f"Coletando dados do canal {ctx.channel.name}...")
         await ctx.send(f"Coletando dados do canal {ctx.channel.name}...")
-        # to-do, fazer depois
-        pass
+
+        count = 0
+        async for message in ctx.channel.history(limit=50, oldest_first=True):
+            msg_dict = await self.message_to_dict(message)
+            self.collection.update_one({"id": message.id}, {"$set": msg_dict}, upsert=True)
+            count += 1
+
+        logging.info(f"{count} mensagens salvas no MongoDB.")
+        await ctx.send(f"✅ Coleta finalizada. **{count} mensagens** salvas no banco de dados.")
