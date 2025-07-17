@@ -39,6 +39,7 @@ class ScrapeCommands(commands.Cog):
             "creation_date": message.created_at,
             "edit_date": getattr(message, "edited_at", None),
             "is_pinned": message.pinned,
+            "jump_url": message.jump_url,
             "channel": {
                 "id": message.channel.id,
                 "name": message.channel.name,
@@ -145,10 +146,27 @@ class ScrapeCommands(commands.Cog):
 
         count = 0
         saved_count = 0
+        skipped_count = 0
         errors = 0
 
         async for message in ctx.channel.history(limit=None, oldest_first=True):
             try:
+                existing = self.collection.find_one({"id": message.id})
+                if existing:
+                    existing_edit_date = existing.get("edit_date")
+                    current_edit_date = getattr(message, "edited_at", None)
+
+                    if current_edit_date and (existing_edit_date is None or current_edit_date > existing_edit_date):
+                        message_dict = await self.message_to_dict(message)
+                        result = self.collection.update_one({"id": message.id}, {"$set": message_dict}, upsert=True)
+                        count += 1
+                        saved_count += 1
+                        logging.info(f"Atualizada mensagem editada: {message.id}")
+                    else:
+                        skipped_count += 1
+                        count += 1
+                    continue
+
                 message_dict = await self.message_to_dict(message)
                 result = self.collection.update_one({"id": message.id}, {"$set": message_dict}, upsert=True)
                 count += 1
@@ -157,12 +175,16 @@ class ScrapeCommands(commands.Cog):
             except Exception as e:
                 errors += 1
                 logging.error(f"Erro ao salvar mensagem {message.id}: {e}")
+            if count % 500 == 0:
+                logging.info(f"Processadas: {count}, Salvas: {saved_count}, Puladas: {skipped_count}, Erros: {errors}")
 
         total_in_db = self.collection.count_documents({})
 
-        logging.info(f"Processadas: {count}, Salvas: {saved_count}, Erros: {errors}, Total no DB: {total_in_db}")
+        logging.info(
+            f"Processadas: {count}, Salvas: {saved_count}, Puladas: {skipped_count}, Erros: {errors}, Total no DB: {total_in_db}"
+        )
         await ctx.send(
-            f"Coleta finalizada.\n**Processadas:** {count}\n**Salvas:** {saved_count}\n**Erros:** {errors}\n**Total no DB:** {total_in_db}"
+            f"Coleta finalizada.\n**Processadas:** {count}\n**Salvas:** {saved_count}\n**Puladas:** {skipped_count}\n**Erros:** {errors}\n**Total no DB:** {total_in_db}"
         )
 
     @commands.hybrid_command(name="dbstatus", description="Verificar status do banco de dados.")
