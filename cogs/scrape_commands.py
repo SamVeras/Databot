@@ -223,7 +223,8 @@ class ScrapeCommands(commands.Cog):
             content = message.get("content_clean") or "[sem conteúdo]"
             author = message["author"]["name"] if message.get("author") else "Desconhecido"
             channel = message["channel"]["name"] if message.get("channel") else "não sei onde"
-            await ctx.send(f"**{author}** em **#{channel}** disse: {content}")
+            jump_url = message.get("jump_url")
+            await ctx.send(f"**{author}** em **#{channel}** disse: {jump_url}\n>>> {content}")
 
         except Exception as e:
             logging.error(f"Erro ao mostrar mensagem aleatória: {e}")
