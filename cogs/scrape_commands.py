@@ -1,8 +1,9 @@
 from discord.ext import commands
 import logging
 import pymongo
-from datetime import datetime
+from datetime import timezone
 from config import MONGO_URI
+import discord
 
 
 class ScrapeCommands(commands.Cog):
@@ -132,7 +133,6 @@ class ScrapeCommands(commands.Cog):
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)
     async def scrape_channel(self, ctx):
-        """Coletar dados do canal e guarda em um arquivo."""
         try:
             self.mongo_client.admin.command("ping")
             logging.info("MongoDB connection successful")
@@ -149,13 +149,20 @@ class ScrapeCommands(commands.Cog):
         skipped_count = 0
         errors = 0
 
+        existing_ids = {
+            doc["id"]: doc.get("edit_date")
+            for doc in self.collection.find({"channel.id": ctx.channel.id}, {"id": 1, "edit_date": 1})
+        }
+
         async for message in ctx.channel.history(limit=None, oldest_first=True):
             try:
-                existing = self.collection.find_one({"id": message.id})
-                if existing:
-                    existing_edit_date = existing.get("edit_date")
-                    current_edit_date = getattr(message, "edited_at", None)
+                existing_edit_date = existing_ids.get(message.id)
+                current_edit_date = getattr(message, "edited_at", None)
 
+                if existing_edit_date and existing_edit_date.tzinfo is None:
+                    existing_edit_date = existing_edit_date.replace(tzinfo=timezone.utc)
+
+                if existing_edit_date:
                     if current_edit_date and (existing_edit_date is None or current_edit_date > existing_edit_date):
                         message_dict = await self.message_to_dict(message)
                         result = self.collection.update_one({"id": message.id}, {"$set": message_dict}, upsert=True)
@@ -187,27 +194,36 @@ class ScrapeCommands(commands.Cog):
             f"Coleta finalizada.\n**Processadas:** {count}\n**Salvas:** {saved_count}\n**Puladas:** {skipped_count}\n**Erros:** {errors}\n**Total no DB:** {total_in_db}"
         )
 
-    @commands.hybrid_command(name="dbstatus", description="Verificar status do banco de dados.")
-    @commands.has_permissions(administrator=True)
-    async def db_status(self, ctx):
-        """Verificar se o MongoDB está funcionando e quantos documentos existem."""
+    @staticmethod
+    async def show_message(message, ctx):
+        content = message.get("content_clean") or "[sem conteúdo]"
+        author = message["author"]["name"] if message.get("author") else "Desconhecido"
+        channel = message["channel"]["name"] if message.get("channel") else "não sei onde"
+        jump_url = message.get("jump_url")
+
+        embed = None
+        if message.get("embeds"):
+            embed_data = message["embeds"][0]
+            embed = discord.Embed(
+                title=embed_data.get("title"),
+                description=embed_data.get("description"),
+                url=embed_data.get("url"),
+            )
+
+        await ctx.send(content=f"**{author}** em **#{channel}** disse: {jump_url}\n>>> {content}", embed=embed)
+
+    @commands.hybrid_command(name="show", description="Mostrar uma mensagem específica do banco de dados.")
+    async def show_message_id(self, ctx, message_id: int):
+        """Mostrar uma mensagem específica do banco de dados."""
         try:
-            self.mongo_client.admin.command("ping")
-            total_docs = self.collection.count_documents({})
-            sample = list(self.collection.find().limit(1))
-
-            status_msg = f"**MongoDB conectado**\n**Documentos:** {total_docs}"
-
-            if sample:
-                latest_doc = sample[0]
-                status_msg += f"\n**Último documento:** {latest_doc.get('id', 'N/A')}"
-                status_msg += f"\n**Autor:** {latest_doc.get('author', {}).get('name', 'N/A')}"
-
-            await ctx.send(status_msg)
-
+            message = self.collection.find_one({"id": message_id})
+            if not message:
+                await ctx.send("Mensagem não encontrada no banco de dados.")
+                return
+            await self.show_message(message, ctx)
         except Exception as e:
-            logging.error(f"Erro ao verificar DB: {e}")
-            await ctx.send(f"**Erro de conexão:** {e}")
+            logging.error(f"Erro ao mostrar mensagem específica: {e}")
+            await ctx.send("Erro ao tentar buscar uma mensagem específica.")
 
     @commands.hybrid_command(name="random", description="Mostrar uma mensagem aleatória do banco de dados.")
     async def show_random_message(self, ctx):
@@ -220,40 +236,24 @@ class ScrapeCommands(commands.Cog):
                 await ctx.send("Nenhuma mensagem encontrada no banco de dados.")
                 return
 
-            content = message.get("content_clean") or "[sem conteúdo]"
-            author = message["author"]["name"] if message.get("author") else "Desconhecido"
-            channel = message["channel"]["name"] if message.get("channel") else "não sei onde"
-            jump_url = message.get("jump_url")
-            await ctx.send(f"**{author}** em **#{channel}** disse: {jump_url}\n>>> {content}")
+            await self.show_message(message, ctx)
 
         except Exception as e:
             logging.error(f"Erro ao mostrar mensagem aleatória: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem aleatória.")
 
-    # @commands.hybrid_command(name="showdata", description="Mostrar alguns dados salvos no banco.")
-    # @commands.has_permissions(administrator=True)
-    # async def show_data(self, ctx):
-    #     """Mostrar alguns exemplos de dados salvos no MongoDB."""
-    #     try:
-    #         docs = list(self.collection.find().limit(5))
+    @commands.hybrid_command(name="randomfix", description="Mostrar uma mensagem fixada aleatória do banco de dados.")
+    async def show_random_fix_message(self, ctx):
+        try:
+            result = self.collection.aggregate([{"$match": {"is_pinned": True}}, {"$sample": {"size": 1}}])
+            message = next(result, None)
 
-    #         if not docs:
-    #             await ctx.send("**Nenhum dado encontrado no banco.**")
-    #             return
+            if not message:
+                await ctx.send("Nenhuma mensagem fixada encontrada no banco de dados.")
+                return
 
-    #         response = "**Dados salvos no MongoDB:**\n\n"
+            await self.show_message(message, ctx)
 
-    #         for i, doc in enumerate(docs, 1):
-    #             author_name = doc.get("author", {}).get("name", "Unknown")
-    #             content = doc.get("content_clean", "")[:100]
-    #             msg_id = doc.get("id", "N/A")
-
-    #             response += f"**{i}.** ID: {msg_id}\n"
-    #             response += f"**Autor:** {author_name}\n"
-    #             response += f"**Conteúdo:** {content}...\n\n"
-
-    #         await ctx.send(response)
-
-    #     except Exception as e:
-    #         logging.error(f"Erro ao mostrar dados: {e}")
-    #         await ctx.send(f"**Erro:** {e}")
+        except Exception as e:
+            logging.error(f"Erro ao mostrar mensagem fixada aleatória: {e}")
+            await ctx.send("Erro ao tentar buscar uma mensagem fixada aleatória.")
