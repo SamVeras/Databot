@@ -56,10 +56,37 @@ class ScrapeCommands(commands.Cog):
             "mention_roles": [{"id": role.id, "name": role.name} for role in getattr(message, "mention_roles", [])],
             "embeds": [
                 {
-                    "title": embed.title,
-                    "type": getattr(embed.type, "name", str(embed.type)) if embed.type else None,
-                    "description": embed.description,
-                    "url": embed.url,
+                    "title": getattr(embed, "title", None),
+                    "type": getattr(embed, "type", None),
+                    "description": getattr(embed, "description", None),
+                    "url": getattr(embed, "url", None),
+                    "image": (
+                        {
+                            "url": getattr(embed.image, "url", None),
+                            "width": getattr(embed.image, "width", None),
+                            "height": getattr(embed.image, "height", None),
+                        }
+                        if getattr(embed, "image", None)
+                        else None
+                    ),
+                    "video": (
+                        {
+                            "url": getattr(embed.video, "url", None),
+                            "width": getattr(embed.video, "width", None),
+                            "height": getattr(embed.video, "height", None),
+                        }
+                        if getattr(embed, "video", None)
+                        else None
+                    ),
+                    "thumbnail": (
+                        {
+                            "url": getattr(embed.thumbnail, "url", None),
+                            "width": getattr(embed.thumbnail, "width", None),
+                            "height": getattr(embed.thumbnail, "height", None),
+                        }
+                        if getattr(embed, "thumbnail", None)
+                        else None
+                    ),
                 }
                 for embed in message.embeds
             ],
