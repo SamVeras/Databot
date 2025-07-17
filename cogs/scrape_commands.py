@@ -229,19 +229,32 @@ class ScrapeCommands(commands.Cog):
         jump_url = message.get("jump_url")
 
         embed = None
-        if message.get("embeds"):
+
+        attachments = message.get("attachments", [])
+        if attachments:
+            embed = discord.Embed()
+            for attachment in attachments:
+                url = attachment.get("url")
+                filename = attachment.get("filename", "")
+                if url and filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                    embed.set_image(url=url)
+                    break
+            for attachment in attachments:
+                url = attachment.get("url")
+                filename = attachment.get("filename", "")
+                if url:
+                    embed.add_field(name="Anexo", value=f"[{filename}]({url})", inline=True)
+        elif message.get("embeds"):
             embed_data = message["embeds"][0]
             embed = discord.Embed(
                 title=embed_data.get("title"),
                 description=embed_data.get("description"),
                 url=embed_data.get("url"),
             )
-
             if embed_data.get("image") and embed_data["image"].get("url"):
-                embed.set_image(url=embed_data.get("image").get("url"))
-
+                embed.set_image(url=embed_data["image"].get("url"))
             if embed_data.get("thumbnail") and embed_data["thumbnail"].get("url"):
-                embed.set_thumbnail(url=embed_data.get("thumbnail").get("url"))
+                embed.set_thumbnail(url=embed_data["thumbnail"].get("url"))
 
         await ctx.send(content=f"**{author}** em **#{channel}** disse: {jump_url}\n>>> {content}", embed=embed)
 
