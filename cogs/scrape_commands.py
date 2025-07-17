@@ -144,7 +144,17 @@ class ScrapeCommands(commands.Cog):
                 "answers": [
                     {
                         "id": getattr(answer, "id", None),
-                        "emoji": getattr(answer, "emoji", None),
+                        "emoji": (
+                            {
+                                "id": getattr(answer.emoji, "id", None),
+                                "name": getattr(answer.emoji, "name", None),
+                                "animated": getattr(answer.emoji, "animated", None),
+                                "url": getattr(answer.emoji, "url", None),
+                                "string": str(answer.emoji),
+                            }
+                            if answer.emoji
+                            else None
+                        ),
                         "text": getattr(answer, "text", None),
                         "count": getattr(answer, "vote_count", None),
                         "victor": getattr(answer, "victor", None),
