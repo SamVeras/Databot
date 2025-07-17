@@ -2,7 +2,7 @@ from discord.ext import commands
 import logging
 import pymongo
 from datetime import timezone
-from config import MONGO_URI
+from config import MONGO_URI, BATCH_SIZE
 import discord
 
 
@@ -181,6 +181,8 @@ class ScrapeCommands(commands.Cog):
             for doc in self.collection.find({"channel.id": ctx.channel.id}, {"id": 1, "edit_date": 1})
         }
 
+        batch = []
+
         async for message in ctx.channel.history(limit=None, oldest_first=True):
             try:
                 existing_edit_date = existing_ids.get(message.id)
@@ -192,7 +194,7 @@ class ScrapeCommands(commands.Cog):
                 if existing_edit_date:
                     if current_edit_date and (existing_edit_date is None or current_edit_date > existing_edit_date):
                         message_dict = await self.message_to_dict(message)
-                        result = self.collection.update_one({"id": message.id}, {"$set": message_dict}, upsert=True)
+                        batch.append(pymongo.UpdateOne({"id": message.id}, {"$set": message_dict}, upsert=True))
                         count += 1
                         saved_count += 1
                         logging.info(f"Atualizada mensagem editada: {message.id}")
@@ -202,15 +204,22 @@ class ScrapeCommands(commands.Cog):
                     continue
 
                 message_dict = await self.message_to_dict(message)
-                result = self.collection.update_one({"id": message.id}, {"$set": message_dict}, upsert=True)
+                batch.append(pymongo.UpdateOne({"id": message.id}, {"$set": message_dict}, upsert=True))
                 count += 1
-                if result.modified_count > 0 or result.upserted_id:
-                    saved_count += 1
+
+                if len(batch) >= BATCH_SIZE:
+                    self.collection.bulk_write(batch, ordered=False)
+                    batch.clear()
+                    logging.info(f"Bulk wrote {BATCH_SIZE} messages...")
             except Exception as e:
                 errors += 1
                 logging.error(f"Erro ao salvar mensagem {message.id}: {e}")
             if count % 500 == 0:
                 logging.info(f"Processadas: {count}, Salvas: {saved_count}, Puladas: {skipped_count}, Erros: {errors}")
+
+        if batch:
+            self.collection.bulk_write(batch, ordered=False)
+            logging.info(f"Bulk wrote final {len(batch)} messages...")
 
         total_in_db = self.collection.count_documents({})
 
