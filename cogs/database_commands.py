@@ -8,7 +8,7 @@ from pymongo import UpdateOne
 
 
 class DatabaseCommands(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
         if not MONGO_URI:
@@ -27,7 +27,7 @@ class DatabaseCommands(commands.Cog):
             raise ValueError(f"[DatabaseCommands] Erro ao conectar ao MongoDB: {e}")
 
     @staticmethod
-    async def message_to_dict(message):
+    async def message_to_dict(message: discord.Message) -> dict:
         """Converter uma mensagem para um dicionário."""
         message_dict = {
             "id": message.id,
@@ -48,7 +48,7 @@ class DatabaseCommands(commands.Cog):
             "jump_url": message.jump_url,
             "channel": {
                 "id": message.channel.id,
-                "name": message.channel.name,
+                "name": getattr(message.channel, "name", None),
             },
             "channel_mentions": [{"id": channel.id, "name": channel.name} for channel in getattr(message, "channel_mentions", [])],
             "guild": {
@@ -141,7 +141,7 @@ class DatabaseCommands(commands.Cog):
             poll = message.poll
             message_dict["poll"] = {
                 "question": getattr(poll, "question", None),
-                "duration": poll.duration.total_seconds() if poll.duration else None,
+                "duration": poll.duration.total_seconds() if poll and getattr(poll, "duration", None) else None,
                 "multiple_choice": getattr(poll, "multiple", None),
                 "answers": [
                     {
@@ -162,7 +162,7 @@ class DatabaseCommands(commands.Cog):
                         "victor": getattr(answer, "victor", None),
                         "voters": [{"id": v.id, "name": v.name} async for v in answer.voters()],
                     }
-                    for answer in poll.answers
+                    for answer in getattr(poll, "answers", [])
                 ],
             }
         else:
@@ -170,7 +170,7 @@ class DatabaseCommands(commands.Cog):
 
         return message_dict
 
-    async def scrape_channel_(self, ctx, silent: bool):
+    async def scrape_channel_(self, ctx: commands.Context, silent: bool) -> None:
         """Scrapear um canal."""
         try:
             channel_info = f"{getattr(ctx.channel, 'name', 'unknown')} (ID: {getattr(ctx.channel, 'id', 'unknown')})"
@@ -184,7 +184,7 @@ class DatabaseCommands(commands.Cog):
                 await ctx.send(f"Erro de conexão com MongoDB: {e}")
             return
 
-        async def scraper_worker(message_queue, ready_queue, worker_id):
+        async def scraper_worker(message_queue: asyncio.Queue, ready_queue: asyncio.Queue, worker_id: int) -> None:
             logging.info(f"[scraper_worker {worker_id}] Iniciado.")
             processed = 0
             try:
@@ -209,7 +209,7 @@ class DatabaseCommands(commands.Cog):
                 logging.error(f"[scraper_worker {worker_id}] Crashed: {e}")
             logging.info(f"[scraper_worker {worker_id}] Finalizado. Mensagens processadas: {processed}")
 
-        async def mongo_worker():
+        async def mongo_worker() -> None:
             logging.info("[mongo_worker] Iniciado.")
             finished = 0  # Quando todos os workers terminarem, o mongo_worker termina
             inserted = 0
@@ -273,21 +273,23 @@ class DatabaseCommands(commands.Cog):
 
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)
-    async def scrape_channel_loud(self, ctx):
-        logging.info(f"[scrape_channel_loud: {ctx.author.name}] Iniciando scraping para o canal {ctx.channel.name}...")
-        await ctx.send(f"Iniciando coleta de dados em {ctx.channel.name}")
+    async def scrape_channel_loud(self, ctx: commands.Context) -> None:
+        cname = getattr(ctx.channel, "name", "desconhecido")
+        logging.info(f"[scrape_channel_loud: {ctx.author.name}] Iniciando scraping para o canal {cname}...")
+        await ctx.send(f"Iniciando coleta de dados em {cname}")
         await self.scrape_channel_(ctx, silent=False)
 
     @commands.hybrid_command(name="scrapesilent", description="Coletar dados do canal sem enviar mensagens.")
     @commands.has_permissions(administrator=True)
-    async def scrape_channel_silent(self, ctx):
-        logging.info(f"[scrape_channel_silent: {ctx.author.name}] Iniciando scraping para o canal {ctx.channel.name}...")
+    async def scrape_channel_silent(self, ctx: commands.Context) -> None:
+        cname = getattr(ctx.channel, "name", "desconhecido")
+        logging.info(f"[scrape_channel_silent: {ctx.author.name}] Iniciando scraping para o canal {cname}...")
         if hasattr(ctx, "interaction") and ctx.interaction is not None:
-            await ctx.interaction.response.send_message(f"Iniciando coleta de dados em {ctx.channel.name}", ephemeral=True)
+            await ctx.interaction.response.send_message(f"Iniciando coleta de dados em {cname}", ephemeral=True)
         await self.scrape_channel_(ctx, silent=True)
 
     @staticmethod
-    async def show_message(msg_id, ctx):
+    async def show_message(msg_id: dict, ctx: commands.Context) -> None:
         """Mostrar uma mensagem específica do banco de dados."""
         logging.info(f"[show_message: {ctx.author.name}] Mostrando mensagem: {msg_id}")
 
@@ -333,10 +335,13 @@ class DatabaseCommands(commands.Cog):
         message = f"**{author}** em **#{channel}** disse: {jump_url}\n"
         if content.strip():
             message += f">>> {content}\n"
-        await ctx.send(content=message, embed=embed)
+        if embed:
+            await ctx.send(content=message, embed=embed)
+        else:
+            await ctx.send(content=message)
 
     @commands.hybrid_command(name="show", description="Mostrar uma mensagem específica do banco de dados.")
-    async def show_message_id(self, ctx, message_id: int):
+    async def show_message_id(self, ctx: commands.Context, message_id: int) -> None:
         """Mostrar uma mensagem específica do banco de dados."""
         logging.info(f"[show_message_id: {ctx.author.name}] Mostrando mensagem: {message_id}")
         try:
@@ -351,7 +356,7 @@ class DatabaseCommands(commands.Cog):
             await ctx.send("Erro ao tentar buscar uma mensagem específica.")
 
     @commands.hybrid_command(name="random", description="Mostrar uma mensagem aleatória do banco de dados.")
-    async def show_random_message(self, ctx):
+    async def show_random_message(self, ctx: commands.Context) -> None:
         """Mostrar uma mensagem aleatória do banco de dados."""
         logging.info(f"[show_random_message: {ctx.author.name}] Mostrando mensagem aleatória...")
         try:
@@ -370,7 +375,7 @@ class DatabaseCommands(commands.Cog):
             await ctx.send("Erro ao tentar buscar uma mensagem aleatória.")
 
     @commands.hybrid_command(name="randomfix", description="Mostrar uma mensagem fixada aleatória do banco de dados.")
-    async def show_random_fix_message(self, ctx):
+    async def show_random_fix_message(self, ctx: commands.Context) -> None:
         """Mostrar uma mensagem fixada aleatória do banco de dados."""
         logging.info(f"[show_random_fix_message: {ctx.author.name}] Mostrando mensagem fixada aleatória...")
         try:
@@ -389,7 +394,7 @@ class DatabaseCommands(commands.Cog):
             await ctx.send("Erro ao tentar buscar uma mensagem fixada aleatória.")
 
     @commands.hybrid_command(name="stats", description="Mostrar estatísticas do banco de dados.")
-    async def show_stats(self, ctx):
+    async def show_stats(self, ctx: commands.Context) -> None:
         """Mostrar estatísticas do banco de dados."""
         logging.info(f"[show_stats: {ctx.author.name}] Mostrando estatísticas do banco de dados...")
 
