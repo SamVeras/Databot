@@ -4,6 +4,7 @@ from config import MONGO_URI, MSG_QUEUE_SIZE, WORKERS_COUNT, BATCH_SIZE
 import discord
 import asyncio
 import motor.motor_asyncio
+from pymongo import UpdateOne
 
 
 class DatabaseCommands(commands.Cog):
@@ -175,6 +176,7 @@ class DatabaseCommands(commands.Cog):
             channel_info = f"{getattr(ctx.channel, 'name', 'unknown')} (ID: {getattr(ctx.channel, 'id', 'unknown')})"
             logging.info(f"[scrape_channel_: {ctx.author.name}] Iniciando scraping no canal: {channel_info}")
             await self.mongo_client.admin.command("ping")
+            await self.collection.create_index("id", unique=True)
             logging.info(f"[scrape_channel_: {ctx.author.name}] Conexão com MongoDB estabelecida")
         except Exception as e:
             logging.error(f"[scrape_channel_: {ctx.author.name}] Erro de conexão com MongoDB: {e}")
@@ -218,20 +220,24 @@ class DatabaseCommands(commands.Cog):
                     finished += 1  # Um worker terminou
                     if finished >= WORKERS_COUNT:
                         if batch:  # Mongo worker vai parar, mas pode ter algumas mensagens no batch ainda
-                            await self.collection.insert_many(batch)
-                            inserted += len(batch)
+                            operations = [UpdateOne({"id": d["id"]}, {"$set": d}, upsert=True) for d in batch]
+                            if operations:
+                                result = await self.collection.bulk_write(operations, ordered=False)
+                                inserted += result.upserted_count + result.modified_count
                             batch = []
                         break
                     continue
                 # Se não for None, é uma mensagem
                 batch.append(data)
                 if len(batch) >= BATCH_SIZE:
-                    await self.collection.insert_many(batch)
-                    inserted += len(batch)
-                    logging.info(f"[mongo_worker] Inseridas {len(batch)} mensagens no banco...")
+                    operations = [UpdateOne({"id": d["id"]}, {"$set": d}, upsert=True) for d in batch]
+                    if operations:
+                        result = await self.collection.bulk_write(operations, ordered=False)
+                        inserted += result.upserted_count + result.modified_count
+                        logging.info(f"[mongo_worker] Inseridas/atualizadas {len(batch)} mensagens no banco...")
                     batch = []
             # Todos os workers terminaram
-            logging.info(f"[mongo_worker] Finalizado. Mensagens inseridas: {inserted}")
+            logging.info(f"[mongo_worker] Finalizado. Mensagens inseridas/atualizadas: {inserted}")
             done.set()
 
         message_queue = asyncio.Queue(MSG_QUEUE_SIZE)  # Queue das mensagens cruas, direto da API do Discord
