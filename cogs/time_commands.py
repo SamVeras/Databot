@@ -9,12 +9,14 @@ import pytz
 
 class TimeCommands(commands.Cog):
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     def __init__(self, bot) -> None:
         self.bot = bot
         self.mongo_client = bot.mongo_client
         self.collection = bot.collections["reminders"]
         self.calendar = parsedatetime.Calendar()
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="parsetime", description="Testar o parser de datas.")
     async def parsetime(self, ctx: commands.Context, *, time: str) -> None:
         """Testar o parser de datas."""
@@ -25,6 +27,7 @@ class TimeCommands(commands.Cog):
         except Exception as e:
             logging.error(f"[parsetime] {e}")
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="remindme", description="Definir um lembrete.")
     async def remindme(self, ctx: commands.Context, time: str, *, reminder: str) -> None:
         """Definir um lembrete."""
@@ -72,13 +75,10 @@ class TimeCommands(commands.Cog):
             return
 
         if str(reaction.emoji) == "❌":
-            await confirm_message.edit(content="Lembrete cancelado pelo usuário.")
+            await confirm_message.edit(content=confirm_message.content + "\n\n*Lembrete cancelado pelo usuário.*")
             return
 
-        await confirm_message.edit(content="Lembrete confirmado e salvo.")
         await self.collection.insert_one(reminder_dict)
-
         ftime = remind_time.astimezone(pytz.timezone("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S")
-        msg = f"Lembrete definido para {ftime}"
-
-        await ctx.send(msg)
+        await confirm_message.clear_reactions()
+        await confirm_message.edit(content=confirm_message.content + f"\n\n*Lembrete confirmado e definido para {ftime}.*")

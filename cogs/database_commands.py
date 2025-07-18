@@ -8,11 +8,13 @@ from pymongo import UpdateOne
 
 class DatabaseCommands(commands.Cog):
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     def __init__(self, bot) -> None:
         self.bot = bot
         self.mongo_client = bot.mongo_client
         self.collection = bot.collections["messages"]
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @staticmethod
     async def message_to_dict(message: discord.Message) -> dict:
         """Converter uma mensagem para um dicionário."""
@@ -157,6 +159,7 @@ class DatabaseCommands(commands.Cog):
 
         return message_dict
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)
     async def scrape_channel(self, ctx: commands.Context) -> None:
@@ -172,7 +175,9 @@ class DatabaseCommands(commands.Cog):
             logging.error(f"[scrape_channel: {ctx.author.name}] Erro de conexão com MongoDB: {e}")
             return
 
+        # ---------------------------------------------- Scraper Worker ---------------------------------------------- #
         async def scraper_worker(message_queue: asyncio.Queue, ready_queue: asyncio.Queue, worker_id: int) -> None:
+            """Responsável processar as mensagens da API do Discord."""
             logging.info(f"[scraper_worker {worker_id}] Iniciado.")
             processed = 0
             try:
@@ -199,7 +204,9 @@ class DatabaseCommands(commands.Cog):
                 logging.error(f"[scraper_worker {worker_id}] Crashed: {e}")
             logging.info(f"[scraper_worker {worker_id}] Finalizado. Mensagens processadas: {processed}")
 
+        # ----------------------------------------------- Mongo Worker ----------------------------------------------- #
         async def mongo_worker() -> None:
+            """Responsável por inserir as mensagens no banco de dados."""
             logging.info("[mongo_worker] Iniciado.")
             finished = 0  # Quando todos os workers terminarem, o mongo_worker termina
             inserted = 0
@@ -230,6 +237,7 @@ class DatabaseCommands(commands.Cog):
             logging.info(f"[mongo_worker] Finalizado. Mensagens inseridas/atualizadas: {inserted}")
             done.set()
 
+        # --------------------------------------------------- main --------------------------------------------------- #
         message_queue = asyncio.Queue(MSG_QUEUE_SIZE)  # Queue das mensagens cruas, direto da API do Discord
         ready_queue = asyncio.Queue(MSG_QUEUE_SIZE)  # Queue das mensagens convertidas para dicionário
         done = asyncio.Event()
@@ -238,11 +246,14 @@ class DatabaseCommands(commands.Cog):
         mongo_task = asyncio.create_task(mongo_worker())
 
         total_messages = 0
+        # Coleta as mensagens da API do Discord e coloca na fila dos workers.
         async for message in ctx.channel.history(limit=None, oldest_first=True):
             await message_queue.put(message)
+
             total_messages += 1
             if total_messages % 1000 == 0:
                 logging.info(f"[scrape_channel] {total_messages} mensagens já foram recebidas da API...")
+
         logging.info(f"[scrape_channel] Total de mensagens recebidas da API: {total_messages}")
 
         for _ in range(WORKERS_COUNT):
@@ -259,6 +270,7 @@ class DatabaseCommands(commands.Cog):
         if hasattr(ctx, "interaction") and ctx.interaction is not None:
             await ctx.send(f"Coleta de dados em #{cname} (ID: {cid}) finalizada com sucesso! {total_messages}", ephemeral=True)
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @staticmethod
     async def show_message(msg_id: dict, ctx: commands.Context) -> None:
         """Mostrar uma mensagem específica do banco de dados."""
@@ -311,6 +323,7 @@ class DatabaseCommands(commands.Cog):
         else:
             await ctx.send(content=message)
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="show", description="Mostrar uma mensagem específica do banco de dados.")
     async def show_message_id(self, ctx: commands.Context, msg_id: int) -> None:
         """Mostrar uma mensagem específica do banco de dados."""
@@ -326,6 +339,7 @@ class DatabaseCommands(commands.Cog):
             logging.error(f"[show_message_id: {ctx.author.name}] Erro ao mostrar mensagem específica: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem específica.")
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="random", description="Mostrar uma mensagem aleatória do banco de dados.")
     async def show_random_message(self, ctx: commands.Context) -> None:
         """Mostrar uma mensagem aleatória do banco de dados."""
@@ -345,6 +359,7 @@ class DatabaseCommands(commands.Cog):
             logging.error(f"[show_random_message: {ctx.author.name}] Erro ao mostrar mensagem aleatória: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem aleatória.")
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="randomfix", description="Mostrar uma mensagem fixada aleatória do banco de dados.")
     async def show_random_fix_message(self, ctx: commands.Context) -> None:
         """Mostrar uma mensagem fixada aleatória do banco de dados."""
@@ -364,6 +379,7 @@ class DatabaseCommands(commands.Cog):
             logging.error(f"[show_random_fix_message: {ctx.author.name}] Erro ao mostrar mensagem fixada aleatória: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem fixada aleatória.")
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="stats", description="Mostrar estatísticas do banco de dados.")
     async def show_stats(self, ctx: commands.Context) -> None:
         """Mostrar estatísticas do banco de dados."""
@@ -390,6 +406,7 @@ class DatabaseCommands(commands.Cog):
 
         await ctx.send(stats_message)
 
+    # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="mystats", description="Mostrar estatísticas pessoais do banco de dados.")
     async def show_my_stats(self, ctx: commands.Context) -> None:
         """Mostrar estatísticas pessoais do banco de dados."""
