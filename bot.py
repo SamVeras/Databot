@@ -1,4 +1,4 @@
-from config import DISCORD_TOKEN, BOT_PREFIX
+from config import DISCORD_TOKEN, BOT_PREFIX, GUILD_ID, MONGO_URI, BULK_SIZE, WORKERS_COUNT, MSG_QUEUE_SIZE
 import discord
 from discord.ext import commands
 from cogs.test_commands import TestCommands
@@ -10,12 +10,14 @@ import os
 import sys
 import asyncio
 import types
+import time
 
 
 class Lad(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._shutdown = False
+        self._command_times = {}
 
     async def on_ready(self) -> None:
         logging.info(f"[on_ready] Logado como {self.user}.")
@@ -57,9 +59,22 @@ class Lad(commands.Bot):
         return log_msg
 
     async def on_command(self, ctx: commands.Context) -> None:
+        self._command_times[ctx.message.id] = time.perf_counter()
         logging.info(self.format_command_log(ctx))
 
+    async def on_command_completion(self, ctx: commands.Context) -> None:
+        start = self._command_times.pop(ctx.message.id, None)
+        if start is not None:
+            duration = time.perf_counter() - start
+            command_name = ctx.command.name if ctx.command else "desconhecido"
+            logging.info(f"[{command_name}: {ctx.author.name}] Comando executado em {duration:.3f} segundos.")
+            try:
+                await ctx.send(f"Comando {command_name} executado em {duration:.3f} segundos.")
+            except Exception:
+                pass
+
     async def on_command_error(self, ctx: commands.Context, error: Exception) -> None:
+        self._command_times.pop(ctx.message.id, None)
         logging.error(self.format_command_log(ctx, error))
 
         msg = None
@@ -118,6 +133,13 @@ if __name__ == "__main__":
     if not DISCORD_TOKEN:
         logging.error("[main] DISCORD_TOKEN não encontrado nas variáveis de ambiente.")
         exit(1)
+
+    if not MONGO_URI:
+        logging.error("[main] MONGO_URI não encontrado nas variáveis de ambiente.")
+        exit(1)
+
+    conf_msg = f"GUILD_ID: {GUILD_ID}, MONGO_URI: {MONGO_URI[:22]}..., BULK_SIZE: {BULK_SIZE}, WORKERS_COUNT: {WORKERS_COUNT}, MSG_QUEUE_SIZE: {MSG_QUEUE_SIZE}"
+    logging.info(f"[main] {conf_msg}")
 
     bot = Lad(command_prefix=BOT_PREFIX, intents=intents)
     logging.info("[main] Bot inicializado com sucesso.")

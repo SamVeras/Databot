@@ -1,6 +1,6 @@
 from discord.ext import commands
 import logging
-from config import MONGO_URI, MSG_QUEUE_SIZE, WORKERS_COUNT, BATCH_SIZE
+from config import MONGO_URI, MSG_QUEUE_SIZE, WORKERS_COUNT, BULK_SIZE
 import discord
 import asyncio
 import motor.motor_asyncio
@@ -231,7 +231,7 @@ class DatabaseCommands(commands.Cog):
                     continue
                 # Se não for None, é uma mensagem
                 batch.append(data)
-                if len(batch) >= BATCH_SIZE:
+                if len(batch) >= BULK_SIZE:
                     operations = [UpdateOne({"message_id": d["message_id"]}, {"$set": d}, upsert=True) for d in batch]
                     if operations:
                         result = await self.collection.bulk_write(operations, ordered=False)
@@ -293,7 +293,7 @@ class DatabaseCommands(commands.Cog):
     @staticmethod
     async def show_message(msg_id: dict, ctx: commands.Context) -> None:
         """Mostrar uma mensagem específica do banco de dados."""
-        logging.info(f"[show_message: {ctx.author.name}] Mostrando mensagem: {msg_id}")
+        logging.info(f"[show_message: {ctx.author.name}] Mostrando mensagem: {msg_id['message_id']}")
 
         try:
             content = msg_id.get("content_clean") or ""
