@@ -1,12 +1,9 @@
 from discord.ext import commands
 import logging
 import pymongo
-from config import MONGO_URI
+from config import MONGO_URI, MSG_QUEUE_SIZE, WORKERS_COUNT
 import discord
 import asyncio
-
-MSG_QUEUE_SIZE = 500
-WORKERS_COUNT = 10
 
 
 class ScrapeCommands(commands.Cog):
@@ -172,6 +169,8 @@ class ScrapeCommands(commands.Cog):
 
     async def scrape_channel_(self, ctx, silent: bool):
         try:
+            channel_info = f"{getattr(ctx.channel, 'name', 'unknown')} (ID: {getattr(ctx.channel, 'id', 'unknown')})"
+            logging.info(f"[scrape_channel_] Iniciando scraping no canal: {channel_info}")
             self.mongo_client.admin.command("ping")
             logging.info("MongoDB connection successful")
         except Exception as e:
@@ -181,6 +180,8 @@ class ScrapeCommands(commands.Cog):
             return
 
         async def scraper_worker(message_queue, ready_queue, worker_id):
+            logging.info(f"[scraper_worker {worker_id}] Iniciado.")
+            processed = 0
             try:
                 while True:
                     message = await message_queue.get()
@@ -189,13 +190,21 @@ class ScrapeCommands(commands.Cog):
                     try:
                         data = await self.message_to_dict(message)
                         await ready_queue.put(data)
+                        processed += 1
+                        if processed % 500 == 0:
+                            logging.info(f"[scraper_worker {worker_id}] Processadas {processed} mensagens...")
                     except Exception as e:
-                        logging.error(f"Worker {worker_id} error processing message {message.id}: {e}")
+                        logging.error(
+                            f"Worker {worker_id} error processing message {getattr(message, 'id', 'unknown')}: {e}"
+                        )
             except Exception as e:
                 logging.error(f"Worker {worker_id} crashed: {e}")
+            logging.info(f"[scraper_worker {worker_id}] Finalizado. Mensagens processadas: {processed}")
 
         async def mongo_worker():
-            finished = 0
+            logging.info("[mongo_worker] Iniciado.")
+            finished = 0  # Quando todos os workers terminarem, o mongo_worker termina
+            inserted = 0
             while True:
                 data = await ready_queue.get()
                 if data is None:
@@ -204,6 +213,10 @@ class ScrapeCommands(commands.Cog):
                         break
                     continue
                 self.collection.insert_one(data)
+                inserted += 1
+                if inserted % 500 == 0:
+                    logging.info(f"[mongo_worker] Inseridas {inserted} mensagens no banco...")
+            logging.info(f"[mongo_worker] Finalizado. Mensagens inseridas: {inserted}")
             done.set()
 
         message_queue = asyncio.Queue(MSG_QUEUE_SIZE)
@@ -217,8 +230,13 @@ class ScrapeCommands(commands.Cog):
 
         mongo_task = asyncio.create_task(mongo_worker())
 
+        total_messages = 0
         async for message in ctx.channel.history(limit=None, oldest_first=True):
             await message_queue.put(message)
+            total_messages += 1
+            if total_messages % 1000 == 0:
+                logging.info(f"[scrape_channel_] {total_messages} mensagens enfileiradas até agora...")
+        logging.info(f"[scrape_channel_] Total de mensagens enfileiradas: {total_messages}")
 
         for _ in range(WORKERS_COUNT):
             await message_queue.put(None)
@@ -230,6 +248,9 @@ class ScrapeCommands(commands.Cog):
 
         await done.wait()
 
+        logging.info(
+            f"[scrape_channel_] Scraping finalizado para canal {channel_info}. Total de mensagens: {total_messages}"
+        )
         if not silent:
             await ctx.send("Scraping finalizado com sucesso!")
 
