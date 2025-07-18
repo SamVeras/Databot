@@ -14,7 +14,7 @@ class DatabaseCommands(commands.Cog):
             logging.error("[DatabaseCommands] MONGO_URI não está configurado!")
             raise ValueError("[DatabaseCommands] MONGO_URI environment variable is not set")
 
-        logging.info(f"[DatabaseCommands] Conectando ao MongoDB: {MONGO_URI[:20]}...")
+        logging.info(f"[DatabaseCommands] Conectando ao MongoDB: {MONGO_URI[:22]}...")
 
         try:
             self.mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
@@ -196,11 +196,11 @@ class DatabaseCommands(commands.Cog):
                             logging.info(f"[scraper_worker {worker_id}] Finalizando com {processed} mensagens processadas.")
                         break
                     try:
+                        if processed % 100 == 0:
+                            logging.info(f"[scraper_worker {worker_id}] Processadas {processed} mensagens...")
                         data = await self.message_to_dict(message)
                         await ready_queue.put(data)
                         processed += 1
-                        if processed % 500 == 0:
-                            logging.info(f"[scraper_worker {worker_id}] Processadas {processed} mensagens...")
                     except Exception as e:
                         logging.error(f"[scraper_worker {worker_id}] Erro ao processar mensagem {getattr(message, 'id', 'unknown')}: {e}")
             except Exception as e:
@@ -263,7 +263,7 @@ class DatabaseCommands(commands.Cog):
         if not silent:
             await ctx.send(f"Coleta de dados em {channel_info} finalizada com sucesso! {total_messages} mensagens coletadas.")
         elif hasattr(ctx, "interaction") and ctx.interaction is not None:
-            await ctx.interaction.response.send_message(f"Coleta de dados em {channel_info} finalizada com sucesso! {total_messages}", ephemeral=True)
+            await ctx.send(f"Coleta de dados em {channel_info} finalizada com sucesso! {total_messages}", ephemeral=True)
 
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)

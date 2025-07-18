@@ -47,7 +47,7 @@ class Lad(commands.Bot):
         guild = ctx.guild.name if ctx.guild else "DM"
         channel = ctx.channel.name if hasattr(ctx.channel, "name") else "DM"
 
-        log_msg = f"{command}, {user.name}#{user.discriminator} ({user.id}), {guild}, {channel}, {timestamp}"
+        log_msg = f"{command};{user.name}#{user.discriminator};({user.id});{guild};{channel};{timestamp}"
 
         if error:
             log_msg += f", {error}"
@@ -102,6 +102,15 @@ intents.presences = True
 intents.messages = True
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        handlers=[
+            logging.FileHandler("bot.log", mode="a", encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+    )
+
+    logging.info("[main] Iniciando bot...")
+
     if not DISCORD_TOKEN:
         logging.error("[main] DISCORD_TOKEN não encontrado nas variáveis de ambiente.")
         exit(1)
