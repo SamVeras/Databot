@@ -16,7 +16,9 @@ pip install -r requirements.txt
 DISCORD_TOKEN={token do bot}
 GUILD_ID={id do server}
 MONGO_URI={string de conexão do MongoDB}
-BATCH_SIZE={tamanho dos batches (padrão é 500)}
+MSG_QUEUE_SIZE={tamanho da fila de mensagens que o bot processa}
+WORKERS_COUNT={número de threads que irão processar mensagens}
+BATCH_SIZE={número de mensagens para cada inserção}
 ```
 
 ```bash

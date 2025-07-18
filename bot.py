@@ -8,6 +8,7 @@ import logging
 import signal
 import os
 import sys
+import asyncio
 
 
 class Lad(commands.Bot):
@@ -16,14 +17,14 @@ class Lad(commands.Bot):
         self._shutdown = False
 
     async def on_ready(self):
-        logging.info(f"Logado como {self.user}.")
+        logging.info(f"[on_ready] Logado como {self.user}.")
         try:
             synced = await self.tree.sync()
-            logging.info(f"Sincronizados {len(synced)} comando(s)")
+            logging.info(f"[on_ready] Sincronizados {len(synced)} comando(s)")
             for synced_command in synced:
-                logging.info(f"Comando registrado: {synced_command.name}")
+                logging.info(f"[on_ready] Comando registrado: {synced_command.name}")
         except Exception as e:
-            logging.error(f"Falha ao sincronizar comandos: {e}")
+            logging.error(f"[on_ready] Falha ao sincronizar comandos: {e}")
 
     def restart(self):
         os.execv(sys.executable, ["python"] + sys.argv)
@@ -31,60 +32,52 @@ class Lad(commands.Bot):
     async def close(self):
         if not self._shutdown:
             self._shutdown = True
-            logging.info("Bot está sendo desligado...")
+            logging.info("[close] Bot está sendo desligado...")
         await super().close()
 
     async def setup_hook(self):
         for cog in [TestCommands, DatabaseCommands, AdminCommands]:
             await self.add_cog(cog(self))
-            logging.info(f"Cog {cog.__name__} carregado com sucesso.")
+            logging.info(f"[setup_hook] Cog {cog.__name__} carregado com sucesso.")
 
-    async def on_command(self, ctx):
+    def format_command_log(self, ctx, error=None):
         timestamp = ctx.message.created_at
         command = ctx.command.name
         user = ctx.author
         guild = ctx.guild.name if ctx.guild else "DM"
         channel = ctx.channel.name if hasattr(ctx.channel, "name") else "DM"
 
-        logging.info(
-            f"COMANDO: {command} | "
-            f"USUARIO: {user.name}#{user.discriminator} ({user.id}) | "
-            f"SERVIDOR: {guild} | "
-            f"CANAL: {channel} | "
-            f"TIMESTAMP: {timestamp}"
-        )
+        log_msg = f"{command}, {user.name}#{user.discriminator} ({user.id}), {guild}, {channel}, {timestamp}"
+
+        if error:
+            log_msg += f", {error}"
+        return log_msg
+
+    async def on_command(self, ctx):
+        logging.info(self.format_command_log(ctx))
 
     async def on_command_error(self, ctx, error):
-        timestamp = ctx.message.created_at
-        command = ctx.command.name if ctx.command else "Desconhecido"
-        user = ctx.author
-        guild = ctx.guild.name if ctx.guild else "DM"
-        channel = ctx.channel.name if hasattr(ctx.channel, "name") else "DM"
+        logging.error(self.format_command_log(ctx, error))
 
-        logging.error(
-            f"COMANDO: {command} | "
-            f"USUARIO: {user.name}#{user.discriminator} ({user.id}) | "
-            f"SERVIDOR: {guild} | "
-            f"CANAL: {channel} | "
-            f"TIMESTAMP: {timestamp} | "
-            f"ERRO: {error}"
-        )
-
+        msg = None
         if isinstance(error, commands.MissingPermissions):
-            try:
-                await ctx.send("Você não tem permissão para usar este comando.")
-            except discord.Forbidden:
-                logging.warning("Bot não tem permissão para enviar mensagens neste canal.")
+            msg = "Você não tem permissão para usar este comando."
         elif isinstance(error, commands.CommandNotFound):
-            try:
-                await ctx.send("Comando não encontrado.")
-            except discord.Forbidden:
-                logging.warning("Bot não tem permissão para enviar mensagens neste canal.")
+            msg = "Comando não encontrado."
+        elif isinstance(error, commands.CommandOnCooldown):
+            msg = "Este comando está em cooldown. Por favor, tente novamente mais tarde."
+        elif isinstance(error, commands.DisabledCommand):
+            msg = "Este comando está desabilitado."
+        elif isinstance(error, commands.CheckFailure):
+            msg = "Você não tem permissão para usar este comando."
         else:
+            msg = f"Erro: {error}."
+
+        if msg:
             try:
-                await ctx.send(f"Erro: {error}.")
+                await ctx.send(msg)
             except discord.Forbidden:
-                logging.error(f"Erro: {error} (Bot não tem permissão para enviar mensagens neste canal)")
+                logging.warning(f"[on_command_error: {ctx.author.name}] Bot não tem permissão para enviar mensagens neste canal: {ctx.channel.name}.")
 
 
 logging.basicConfig(
@@ -95,10 +88,8 @@ logging.basicConfig(
 
 
 def signal_handler(signum, frame):
-    logging.info(f"Recebido sinal {signum}, desligando bot...")
+    logging.info(f"[signal_handler] Recebido sinal {signum}, desligando bot...")
     if "bot" in globals():
-        import asyncio
-
         asyncio.create_task(bot.close())
 
 
@@ -112,19 +103,21 @@ intents.messages = True
 
 if __name__ == "__main__":
     if not DISCORD_TOKEN:
-        print("Erro: DISCORD_TOKEN não encontrado nas variáveis de ambiente!")
+        logging.error("[main] DISCORD_TOKEN não encontrado nas variáveis de ambiente.")
         exit(1)
 
     bot = Lad(command_prefix=BOT_PREFIX, intents=intents)
+    logging.info("[main] Bot inicializado com sucesso.")
 
     signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
     signal.signal(signal.SIGTERM, signal_handler)
+    logging.info("[main] Sinais de interrupção registrado.")
 
     try:
         bot.run(DISCORD_TOKEN)
     except KeyboardInterrupt:
-        logging.info("Interrupção do teclado detectada, desligando bot...")
+        logging.info("[main] Interrupção do teclado detectada, desligando bot...")
     except Exception as e:
-        logging.error(f"Erro inesperado: {e}")
+        logging.error(f"[main] Erro inesperado: {e}")
     finally:
-        logging.info("Bot desligado.")
+        logging.info("[main] Bot desligado.")
