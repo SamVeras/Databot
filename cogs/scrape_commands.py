@@ -168,19 +168,19 @@ class ScrapeCommands(commands.Cog):
 
         return message_dict
 
-    @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
-    @commands.has_permissions(administrator=True)
-    async def scrape_channel(self, ctx):
+    async def scrape_channel_(self, ctx, silent: bool):
         try:
             self.mongo_client.admin.command("ping")
             logging.info("MongoDB connection successful")
         except Exception as e:
             logging.error(f"MongoDB connection failed: {e}")
-            await ctx.send(f"Erro de conexão com MongoDB: {e}")
+            if not silent:
+                await ctx.send(f"Erro de conexão com MongoDB: {e}")
             return
 
         logging.info(f"Coletando dados do canal {ctx.channel.name}...")
-        await ctx.send(f"Coletando dados do canal {ctx.channel.name}...")
+        if not silent:
+            await ctx.send(f"Coletando dados do canal {ctx.channel.name}...")
 
         count = 0
         saved_count = 0
@@ -238,9 +238,22 @@ class ScrapeCommands(commands.Cog):
         logging.info(
             f"Processadas: {count}, Salvas: {saved_count}, Puladas: {skipped_count}, Erros: {errors}, Total no DB: {total_in_db}"
         )
-        await ctx.send(
-            f"Coleta finalizada.\n**Processadas:** {count}\n**Salvas:** {saved_count}\n**Puladas:** {skipped_count}\n**Erros:** {errors}\n**Total no DB:** {total_in_db}"
-        )
+        if not silent:
+            await ctx.send(
+                f"Coleta finalizada.\n**Processadas:** {count}\n**Salvas:** {saved_count}\n**Puladas:** {skipped_count}\n**Erros:** {errors}\n**Total no DB:** {total_in_db}"
+            )
+
+    @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
+    @commands.has_permissions(administrator=True)
+    async def scrape_channel_loud(self, ctx):
+        await self.scrape_channel_(ctx, silent=False)
+
+    @commands.hybrid_command(name="scrapesilent", description="Coletar dados do canal sem enviar mensagens.")
+    @commands.has_permissions(administrator=True)
+    async def scrape_channel_silent(self, ctx):
+        if hasattr(ctx, "interaction") and ctx.interaction is not None:
+            await ctx.interaction.response.send_message("Scraping started! (silent)", ephemeral=True)
+        await self.scrape_channel_(ctx, silent=True)
 
     @staticmethod
     async def show_message(message, ctx):
