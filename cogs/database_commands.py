@@ -30,9 +30,9 @@ class DatabaseCommands(commands.Cog):
     async def message_to_dict(message: discord.Message) -> dict:
         """Converter uma mensagem para um dicionário."""
         message_dict = {
-            "id": message.id,
+            "message_id": message.id,
             "type": message.type.value,
-            "tts": message.tts,
+            "is_tts": message.tts,
             "flags": message.flags.value,
             "mention_everyone": getattr(message, "mention_everyone", False),
             "webhook_id": getattr(message, "webhook_id", None),
@@ -42,8 +42,8 @@ class DatabaseCommands(commands.Cog):
             },
             "content_raw": message.content,
             "content_clean": message.clean_content,
-            "creation_date": message.created_at,
-            "edit_date": getattr(message, "edited_at", None),
+            "created_at": message.created_at,
+            "edited_at": getattr(message, "edited_at", None),
             "is_pinned": message.pinned,
             "jump_url": message.jump_url,
             "channel": {
