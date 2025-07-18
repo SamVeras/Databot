@@ -1,10 +1,12 @@
 from discord.ext import commands
 import logging
 import pymongo
-from datetime import timezone
-from config import MONGO_URI, BATCH_SIZE
+from config import MONGO_URI
 import discord
 import asyncio
+
+MSG_QUEUE_SIZE = 500
+WORKERS_COUNT = 10
 
 
 class ScrapeCommands(commands.Cog):
@@ -178,70 +180,58 @@ class ScrapeCommands(commands.Cog):
                 await ctx.send(f"Erro de conexão com MongoDB: {e}")
             return
 
-        logging.info(f"Coletando dados do canal {ctx.channel.name}...")
-        if not silent:
-            await ctx.send(f"Coletando dados do canal {ctx.channel.name}...")
+        async def scraper_worker(message_queue, ready_queue, worker_id):
+            try:
+                while True:
+                    message = await message_queue.get()
+                    if message is None:
+                        break
+                    try:
+                        data = await self.message_to_dict(message)
+                        await ready_queue.put(data)
+                    except Exception as e:
+                        logging.error(f"Worker {worker_id} error processing message {message.id}: {e}")
+            except Exception as e:
+                logging.error(f"Worker {worker_id} crashed: {e}")
 
-        count = 0
-        saved_count = 0
-        skipped_count = 0
-        errors = 0
+        async def mongo_worker():
+            finished = 0
+            while True:
+                data = await ready_queue.get()
+                if data is None:
+                    finished += 1
+                    if finished >= WORKERS_COUNT:
+                        break
+                    continue
+                self.collection.insert_one(data)
+            done.set()
 
-        existing_ids = {
-            doc["id"]: doc.get("edit_date")
-            for doc in self.collection.find({"channel.id": ctx.channel.id}, {"id": 1, "edit_date": 1})
-        }
+        message_queue = asyncio.Queue(MSG_QUEUE_SIZE)
+        ready_queue = asyncio.Queue(MSG_QUEUE_SIZE)
+        done = asyncio.Event()
 
-        batch = []
+        workers = []
+        for worker_id in range(WORKERS_COUNT):
+            worker = asyncio.create_task(scraper_worker(message_queue, ready_queue, worker_id))
+            workers.append(worker)
+
+        mongo_task = asyncio.create_task(mongo_worker())
 
         async for message in ctx.channel.history(limit=None, oldest_first=True):
-            try:
-                existing_edit_date = existing_ids.get(message.id)
-                current_edit_date = getattr(message, "edited_at", None)
+            await message_queue.put(message)
 
-                if existing_edit_date and existing_edit_date.tzinfo is None:
-                    existing_edit_date = existing_edit_date.replace(tzinfo=timezone.utc)
+        for _ in range(WORKERS_COUNT):
+            await message_queue.put(None)
 
-                if existing_edit_date:
-                    if current_edit_date and (existing_edit_date is None or current_edit_date > existing_edit_date):
-                        message_dict = await self.message_to_dict(message)
-                        batch.append(pymongo.UpdateOne({"id": message.id}, {"$set": message_dict}, upsert=True))
-                        count += 1
-                        saved_count += 1
-                        logging.info(f"Atualizada mensagem editada: {message.id}")
-                    else:
-                        skipped_count += 1
-                        count += 1
-                    continue
+        await asyncio.gather(*workers, return_exceptions=True)
 
-                message_dict = await self.message_to_dict(message)
-                batch.append(pymongo.UpdateOne({"id": message.id}, {"$set": message_dict}, upsert=True))
-                count += 1
+        for _ in range(WORKERS_COUNT):
+            await ready_queue.put(None)
 
-                if len(batch) >= BATCH_SIZE:
-                    await asyncio.to_thread(self.collection.bulk_write, batch, ordered=False)
-                    batch.clear()
-                    logging.info(f"Bulk wrote {BATCH_SIZE} messages...")
-                    await asyncio.sleep(0)
-            except Exception as e:
-                errors += 1
-                logging.error(f"Erro ao salvar mensagem {message.id}: {e}")
-            if count % 500 == 0:
-                logging.info(f"Processadas: {count}, Salvas: {saved_count}, Puladas: {skipped_count}, Erros: {errors}")
+        await done.wait()
 
-        if batch:
-            await asyncio.to_thread(self.collection.bulk_write, batch, ordered=False)
-            logging.info(f"Bulk wrote final {len(batch)} messages...")
-
-        total_in_db = self.collection.count_documents({})
-
-        logging.info(
-            f"Processadas: {count}, Salvas: {saved_count}, Puladas: {skipped_count}, Erros: {errors}, Total no DB: {total_in_db}"
-        )
         if not silent:
-            await ctx.send(
-                f"Coleta finalizada.\n**Processadas:** {count}\n**Salvas:** {saved_count}\n**Puladas:** {skipped_count}\n**Erros:** {errors}\n**Total no DB:** {total_in_db}"
-            )
+            await ctx.send("Scraping finalizado com sucesso!")
 
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)
