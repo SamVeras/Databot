@@ -9,3 +9,4 @@ BOT_PREFIX = "~"
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", 500))
 MSG_QUEUE_SIZE = int(os.getenv("MSG_QUEUE_SIZE", 500))
 WORKERS_COUNT = int(os.getenv("WORKERS_COUNT", 10))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 500))

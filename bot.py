@@ -2,7 +2,7 @@ from config import DISCORD_TOKEN, BOT_PREFIX
 import discord
 from discord.ext import commands
 from cogs.test_commands import TestCommands
-from cogs.scrape_commands import ScrapeCommands
+from cogs.database_commands import DatabaseCommands
 from cogs.admin_commands import AdminCommands
 import logging
 import signal
@@ -35,7 +35,7 @@ class Lad(commands.Bot):
         await super().close()
 
     async def setup_hook(self):
-        for cog in [TestCommands, ScrapeCommands, AdminCommands]:
+        for cog in [TestCommands, DatabaseCommands, AdminCommands]:
             await self.add_cog(cog(self))
             logging.info(f"Cog {cog.__name__} carregado com sucesso.")
 

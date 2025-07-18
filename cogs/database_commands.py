@@ -1,29 +1,33 @@
 from discord.ext import commands
 import logging
-import pymongo
-from config import MONGO_URI, MSG_QUEUE_SIZE, WORKERS_COUNT
+from config import MONGO_URI, MSG_QUEUE_SIZE, WORKERS_COUNT, BATCH_SIZE
 import discord
 import asyncio
+import motor.motor_asyncio
 
 
-class ScrapeCommands(commands.Cog):
+class DatabaseCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
         if not MONGO_URI:
-            logging.error("MONGO_URI não está configurado!")
-            raise ValueError("MONGO_URI environment variable is not set")
+            logging.error("[DatabaseCommands] MONGO_URI não está configurado!")
+            raise ValueError("[DatabaseCommands] MONGO_URI environment variable is not set")
 
-        logging.info(f"Conectando ao MongoDB: {MONGO_URI[:20]}...")
+        logging.info(f"[DatabaseCommands] Conectando ao MongoDB: {MONGO_URI[:20]}...")
 
-        self.mongo_client = pymongo.MongoClient(MONGO_URI)
-        self.db = self.mongo_client["discord_data"]
-        self.collection = self.db["messages"]
-
-        logging.info(f"Conectado ao banco: {self.db.name}, coleção: {self.collection.name}")
+        try:
+            self.mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
+            self.db = self.mongo_client["discord_data"]
+            self.collection = self.db["messages"]
+            logging.info(f"[DatabaseCommands] Conectado ao banco: {self.db.name}, coleção: {self.collection.name}")
+        except Exception as e:
+            logging.error(f"[DatabaseCommands] Erro ao conectar ao MongoDB: {e}")
+            raise ValueError(f"[DatabaseCommands] Erro ao conectar ao MongoDB: {e}")
 
     @staticmethod
     async def message_to_dict(message):
+        """Converter uma mensagem para um dicionário."""
         message_dict = {
             "id": message.id,
             "type": message.type.value,
@@ -45,9 +49,7 @@ class ScrapeCommands(commands.Cog):
                 "id": message.channel.id,
                 "name": message.channel.name,
             },
-            "channel_mentions": [
-                {"id": channel.id, "name": channel.name} for channel in getattr(message, "channel_mentions", [])
-            ],
+            "channel_mentions": [{"id": channel.id, "name": channel.name} for channel in getattr(message, "channel_mentions", [])],
             "guild": {
                 "id": getattr(message.guild, "id", None),
                 "name": getattr(message.guild, "name", None),
@@ -168,13 +170,14 @@ class ScrapeCommands(commands.Cog):
         return message_dict
 
     async def scrape_channel_(self, ctx, silent: bool):
+        """Scrapear um canal."""
         try:
             channel_info = f"{getattr(ctx.channel, 'name', 'unknown')} (ID: {getattr(ctx.channel, 'id', 'unknown')})"
-            logging.info(f"[scrape_channel_] Iniciando scraping no canal: {channel_info}")
-            self.mongo_client.admin.command("ping")
-            logging.info("MongoDB connection successful")
+            logging.info(f"[scrape_channel_: {ctx.author.name}] Iniciando scraping no canal: {channel_info}")
+            await self.mongo_client.admin.command("ping")
+            logging.info(f"[scrape_channel_: {ctx.author.name}] Conexão com MongoDB estabelecida")
         except Exception as e:
-            logging.error(f"MongoDB connection failed: {e}")
+            logging.error(f"[scrape_channel_: {ctx.author.name}] Erro de conexão com MongoDB: {e}")
             if not silent:
                 await ctx.send(f"Erro de conexão com MongoDB: {e}")
             return
@@ -184,8 +187,13 @@ class ScrapeCommands(commands.Cog):
             processed = 0
             try:
                 while True:
+                    await asyncio.sleep(0.01)
                     message = await message_queue.get()
                     if message is None:
+                        if processed == 0:
+                            logging.warning(f"[scraper_worker {worker_id}] Finalizando sem processar nenhuma mensagem.")
+                        else:
+                            logging.info(f"[scraper_worker {worker_id}] Finalizando com {processed} mensagens processadas.")
                         break
                     try:
                         data = await self.message_to_dict(message)
@@ -194,40 +202,43 @@ class ScrapeCommands(commands.Cog):
                         if processed % 500 == 0:
                             logging.info(f"[scraper_worker {worker_id}] Processadas {processed} mensagens...")
                     except Exception as e:
-                        logging.error(
-                            f"Worker {worker_id} error processing message {getattr(message, 'id', 'unknown')}: {e}"
-                        )
+                        logging.error(f"[scraper_worker {worker_id}] Erro ao processar mensagem {getattr(message, 'id', 'unknown')}: {e}")
             except Exception as e:
-                logging.error(f"Worker {worker_id} crashed: {e}")
+                logging.error(f"[scraper_worker {worker_id}] Crashed: {e}")
             logging.info(f"[scraper_worker {worker_id}] Finalizado. Mensagens processadas: {processed}")
 
         async def mongo_worker():
             logging.info("[mongo_worker] Iniciado.")
             finished = 0  # Quando todos os workers terminarem, o mongo_worker termina
             inserted = 0
+            batch = []
             while True:
                 data = await ready_queue.get()
                 if data is None:
-                    finished += 1
+                    finished += 1  # Um worker terminou
                     if finished >= WORKERS_COUNT:
+                        if batch:  # Mongo worker vai parar, mas pode ter algumas mensagens no batch ainda
+                            await self.collection.insert_many(batch)
+                            inserted += len(batch)
+                            batch = []
                         break
                     continue
-                self.collection.insert_one(data)
-                inserted += 1
-                if inserted % 500 == 0:
-                    logging.info(f"[mongo_worker] Inseridas {inserted} mensagens no banco...")
+                # Se não for None, é uma mensagem
+                batch.append(data)
+                if len(batch) >= BATCH_SIZE:
+                    await self.collection.insert_many(batch)
+                    inserted += len(batch)
+                    logging.info(f"[mongo_worker] Inseridas {len(batch)} mensagens no banco...")
+                    batch = []
+            # Todos os workers terminaram
             logging.info(f"[mongo_worker] Finalizado. Mensagens inseridas: {inserted}")
             done.set()
 
-        message_queue = asyncio.Queue(MSG_QUEUE_SIZE)
-        ready_queue = asyncio.Queue(MSG_QUEUE_SIZE)
+        message_queue = asyncio.Queue(MSG_QUEUE_SIZE)  # Queue das mensagens cruas, direto da API do Discord
+        ready_queue = asyncio.Queue(MSG_QUEUE_SIZE)  # Queue das mensagens convertidas para dicionário
         done = asyncio.Event()
 
-        workers = []
-        for worker_id in range(WORKERS_COUNT):
-            worker = asyncio.create_task(scraper_worker(message_queue, ready_queue, worker_id))
-            workers.append(worker)
-
+        workers = [asyncio.create_task(scraper_worker(message_queue, ready_queue, worker_id)) for worker_id in range(WORKERS_COUNT)]
         mongo_task = asyncio.create_task(mongo_worker())
 
         total_messages = 0
@@ -235,47 +246,58 @@ class ScrapeCommands(commands.Cog):
             await message_queue.put(message)
             total_messages += 1
             if total_messages % 1000 == 0:
-                logging.info(f"[scrape_channel_] {total_messages} mensagens enfileiradas até agora...")
-        logging.info(f"[scrape_channel_] Total de mensagens enfileiradas: {total_messages}")
+                logging.info(f"[scrape_channel_] {total_messages} mensagens já foram recebidas da API...")
+        logging.info(f"[scrape_channel_] Total de mensagens recebidas da API: {total_messages}")
 
         for _ in range(WORKERS_COUNT):
             await message_queue.put(None)
 
-        await asyncio.gather(*workers, return_exceptions=True)
+        await asyncio.gather(*workers, return_exceptions=True)  # Aguardar todos os workers terminarem
 
         for _ in range(WORKERS_COUNT):
             await ready_queue.put(None)
 
-        await done.wait()
+        await done.wait()  # Aguardar o mongo_worker terminar
 
-        logging.info(
-            f"[scrape_channel_] Scraping finalizado para canal {channel_info}. Total de mensagens: {total_messages}"
-        )
+        logging.info(f"[scrape_channel_] Scraping finalizado para o canal {channel_info}. Total de mensagens: {total_messages}")
         if not silent:
-            await ctx.send("Scraping finalizado com sucesso!")
+            await ctx.send(f"Coleta de dados em {channel_info} finalizada com sucesso! {total_messages} mensagens coletadas.")
+        elif hasattr(ctx, "interaction") and ctx.interaction is not None:
+            await ctx.interaction.response.send_message(f"Coleta de dados em {channel_info} finalizada com sucesso! {total_messages}", ephemeral=True)
 
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)
     async def scrape_channel_loud(self, ctx):
+        logging.info(f"[scrape_channel_loud: {ctx.author.name}] Iniciando scraping para o canal {ctx.channel.name}...")
+        await ctx.send(f"Iniciando coleta de dados em {ctx.channel.name}")
         await self.scrape_channel_(ctx, silent=False)
 
     @commands.hybrid_command(name="scrapesilent", description="Coletar dados do canal sem enviar mensagens.")
     @commands.has_permissions(administrator=True)
     async def scrape_channel_silent(self, ctx):
+        logging.info(f"[scrape_channel_silent: {ctx.author.name}] Iniciando scraping para o canal {ctx.channel.name}...")
         if hasattr(ctx, "interaction") and ctx.interaction is not None:
-            await ctx.interaction.response.send_message("Scraping started! (silent)", ephemeral=True)
+            await ctx.interaction.response.send_message(f"Iniciando coleta de dados em {ctx.channel.name}", ephemeral=True)
         await self.scrape_channel_(ctx, silent=True)
 
     @staticmethod
-    async def show_message(message, ctx):
-        content = message.get("content_clean") or ""
-        author = message["author"]["name"] if message.get("author") else "Desconhecido"
-        channel = message["channel"]["name"] if message.get("channel") else "não sei onde"
-        jump_url = message.get("jump_url")
+    async def show_message(msg_id, ctx):
+        """Mostrar uma mensagem específica do banco de dados."""
+        logging.info(f"[show_message: {ctx.author.name}] Mostrando mensagem: {msg_id}")
+
+        try:
+            content = msg_id.get("content_clean") or ""
+            author = msg_id["author"]["name"] if msg_id.get("author") else "Desconhecido"
+            channel = msg_id["channel"]["name"] if msg_id.get("channel") else "não sei onde"
+            jump_url = msg_id.get("jump_url")
+        except Exception as e:
+            logging.error(f"[show_message: {ctx.author.name}] Erro ao mostrar mensagem: {e}")
+            await ctx.send("Erro ao tentar buscar a mensagem.")
+            return
 
         embed = None
 
-        attachments = message.get("attachments", [])
+        attachments = msg_id.get("attachments", [])
         if attachments:
             embed = discord.Embed()
             for attachment in attachments:
@@ -289,8 +311,8 @@ class ScrapeCommands(commands.Cog):
                 filename = attachment.get("filename", "")
                 if url:
                     embed.add_field(name="Anexo", value=f"[{filename}]({url})", inline=True)
-        elif message.get("embeds"):
-            embed_data = message["embeds"][0]
+        elif msg_id.get("embeds"):
+            embed_data = msg_id["embeds"][0]
             embed = discord.Embed(
                 title=embed_data.get("title"),
                 description=embed_data.get("description"),
@@ -301,27 +323,35 @@ class ScrapeCommands(commands.Cog):
             if embed_data.get("thumbnail") and embed_data["thumbnail"].get("url"):
                 embed.set_thumbnail(url=embed_data["thumbnail"].get("url"))
 
-        await ctx.send(content=f"**{author}** em **#{channel}** disse: {jump_url}\n>>> {content}", embed=embed)
+        logging.info(f"[show_message] Enviando mensagem: {author} em {channel} com o ID {msg_id['id']}: {content[:20]}...")
+        message = f"**{author}** em **#{channel}** disse: {jump_url}\n"
+        if content.strip():
+            message += f">>> {content}\n"
+        await ctx.send(content=message, embed=embed)
 
     @commands.hybrid_command(name="show", description="Mostrar uma mensagem específica do banco de dados.")
     async def show_message_id(self, ctx, message_id: int):
         """Mostrar uma mensagem específica do banco de dados."""
+        logging.info(f"[show_message_id: {ctx.author.name}] Mostrando mensagem: {message_id}")
         try:
-            message = self.collection.find_one({"id": message_id})
+            message = await self.collection.find_one({"id": message_id})
             if not message:
                 await ctx.send("Mensagem não encontrada no banco de dados.")
                 return
+            logging.info(f"[show_message_id: {ctx.author.name}] Mensagem encontrada: {message['id']}")
             await self.show_message(message, ctx)
         except Exception as e:
-            logging.error(f"Erro ao mostrar mensagem específica: {e}")
+            logging.error(f"[show_message_id: {ctx.author.name}] Erro ao mostrar mensagem específica: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem específica.")
 
     @commands.hybrid_command(name="random", description="Mostrar uma mensagem aleatória do banco de dados.")
     async def show_random_message(self, ctx):
         """Mostrar uma mensagem aleatória do banco de dados."""
+        logging.info(f"[show_random_message: {ctx.author.name}] Mostrando mensagem aleatória...")
         try:
-            result = self.collection.aggregate([{"$sample": {"size": 1}}])
-            message = next(result, None)
+            cursor = self.collection.aggregate([{"$sample": {"size": 1}}])
+            message_list = await cursor.to_list(length=1)
+            message = message_list[0] if message_list else None
 
             if not message:
                 await ctx.send("Nenhuma mensagem encontrada no banco de dados.")
@@ -330,14 +360,17 @@ class ScrapeCommands(commands.Cog):
             await self.show_message(message, ctx)
 
         except Exception as e:
-            logging.error(f"Erro ao mostrar mensagem aleatória: {e}")
+            logging.error(f"[show_random_message: {ctx.author.name}] Erro ao mostrar mensagem aleatória: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem aleatória.")
 
     @commands.hybrid_command(name="randomfix", description="Mostrar uma mensagem fixada aleatória do banco de dados.")
     async def show_random_fix_message(self, ctx):
+        """Mostrar uma mensagem fixada aleatória do banco de dados."""
+        logging.info(f"[show_random_fix_message: {ctx.author.name}] Mostrando mensagem fixada aleatória...")
         try:
-            result = self.collection.aggregate([{"$match": {"is_pinned": True}}, {"$sample": {"size": 1}}])
-            message = next(result, None)
+            cursor = self.collection.aggregate([{"$match": {"is_pinned": True}}, {"$sample": {"size": 1}}])
+            message_list = await cursor.to_list(length=1)
+            message = message_list[0] if message_list else None
 
             if not message:
                 await ctx.send("Nenhuma mensagem fixada encontrada no banco de dados.")
@@ -346,5 +379,31 @@ class ScrapeCommands(commands.Cog):
             await self.show_message(message, ctx)
 
         except Exception as e:
-            logging.error(f"Erro ao mostrar mensagem fixada aleatória: {e}")
+            logging.error(f"[show_random_fix_message: {ctx.author.name}] Erro ao mostrar mensagem fixada aleatória: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem fixada aleatória.")
+
+    @commands.hybrid_command(name="stats", description="Mostrar estatísticas do banco de dados.")
+    async def show_stats(self, ctx):
+        """Mostrar estatísticas do banco de dados."""
+        logging.info(f"[show_stats: {ctx.author.name}] Mostrando estatísticas do banco de dados...")
+
+        total_messages = await self.collection.count_documents({})
+        pipeline = [
+            {"$group": {"_id": {"name": "$channel.name"}, "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+        ]
+        channel_counts_cursor = self.collection.aggregate(pipeline)
+        channel_counts = await channel_counts_cursor.to_list(length=None)
+
+        stats_message = f"**Total de mensagens salvas:** {total_messages}\n"
+        if channel_counts:
+            i = 1
+            for channel in channel_counts:
+                channel_name = channel["_id"].get("name", "Desconhecido")
+                count = channel["count"]
+                stats_message += f"{i}. `#{channel_name}`: {count} mensagens\n"
+                i += 1
+        else:
+            stats_message += "Nenhuma mensagem encontrada por canal. wtf kkk"
+
+        await ctx.send(stats_message)
