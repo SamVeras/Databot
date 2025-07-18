@@ -1,4 +1,4 @@
-from config import MONGO_URI, GUILD_ID
+from config import MONGO_URI, GUILD_ID, REMINDER_CHANNEL_NAME
 import discord
 import os
 import sys
@@ -6,18 +6,24 @@ from cogs.test_commands import TestCommands
 from cogs.database_commands import DatabaseCommands
 from cogs.admin_commands import AdminCommands
 from cogs.fun_commands import FunCommands
+from cogs.time_commands import TimeCommands
 import time
 import motor.motor_asyncio
 from discord.ext import commands
 import logging
+from datetime import datetime, timezone
+import asyncio
+import random
+import pytz
 
 
 class Lad(commands.Bot):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._shutdown = False
         self._command_times = {}
-        # self.reminder_task = None
+        self.reminder_task = None
 
         if not MONGO_URI:
             logging.error("[on_ready] MONGO_URI não encontrado nas variáveis de ambiente.")
@@ -48,6 +54,42 @@ class Lad(commands.Bot):
         except Exception as e:
             logging.error(f"[on_ready] Falha ao sincronizar comandos: {e}")
 
+        if self.reminder_task is None:
+            logging.info(f"[on_ready] Iniciando loop de lembretes em #{REMINDER_CHANNEL_NAME}...")
+            self.reminder_task = self.loop.create_task(self.reminder_loop(REMINDER_CHANNEL_NAME))
+
+    async def reminder_loop(self, channel_name: str) -> None:
+        await self.wait_until_ready()
+
+        guild: discord.Guild | None = self.get_guild(GUILD_ID)
+        if not guild:
+            logging.error(f"[reminder_loop] Não encontrado o servidor: #{GUILD_ID}")
+            return
+
+        channel = discord.utils.get(guild.channels, name=channel_name)
+
+        if not channel:
+            logging.error(f"[reminder_loop] Não encontrado o canal: #{channel_name} em {guild.name}")
+            return
+
+        if not isinstance(channel, discord.TextChannel):
+            logging.error(f"[reminder_loop] Canal de lembretes não é um TextChannel: #{channel_name}")
+            return
+
+        while not self.is_closed():
+            now = datetime.now(pytz.timezone("America/Sao_Paulo"))
+            logging.debug(f"[reminder_loop] Agora: {now}")
+            reminders = await self.collections["reminders"].find({"remind_at": {"$lte": now}, "delivered": False}).to_list(length=100)
+
+            for reminder in reminders:
+                try:
+                    await channel.send(f"Lembrete {await self.get_random_emoji_string()}: {reminder['message']}")
+                    await self.collections["reminders"].update_one({"_id": reminder["_id"]}, {"$set": {"delivered": True}})
+                except Exception as e:
+                    logging.error(f"[reminder_loop] Erro ao enviar lembrete: {e}")
+
+            await asyncio.sleep(10)
+
     def restart(self) -> None:
         os.execv(sys.executable, ["python"] + sys.argv)
 
@@ -58,7 +100,7 @@ class Lad(commands.Bot):
         await super().close()
 
     async def setup_hook(self) -> None:
-        for cog in [TestCommands, DatabaseCommands, AdminCommands, FunCommands]:
+        for cog in [TestCommands, DatabaseCommands, AdminCommands, FunCommands, TimeCommands]:
             await self.add_cog(cog(self))
             logging.info(f"[setup_hook] Cog {cog.__name__} carregado com sucesso.")
 
@@ -119,23 +161,44 @@ class Lad(commands.Bot):
                 cname = getattr(ctx.channel, "name", "desconhecido")
                 logging.warning(f"[on_command_error: {ctx.author.name}] Bot não tem permissão para enviar mensagens neste canal: #{cname}.")
 
-    async def get_emoji_string(self, emoji: str) -> str:
+    async def get_emoji_string(self, emoji_name: str) -> str:
         """Retorna uma string com o código do emoji, ou o nome do emoji se não achar."""
         try:
-            logging.info(f'[get_emoji_string] Buscando emoji: "{emoji}"')
+            logging.info(f'[get_emoji_string] Buscando emoji: "{emoji_name}"')
             guild = self.get_guild(GUILD_ID)
             if not guild:
                 logging.info(f'[get_emoji_string] Não encontrado servidor: "{GUILD_ID}"')
-                return f"<:{emoji}>"
+                return f"<:{emoji_name}>"
 
-            for e in guild.emojis:
-                if e.name == emoji:
-                    logging.info(f'[get_emoji_string] Encontrado emoji em "{guild.name}": "{e.name}" com id: "{e.id}"')
-                    return f"<:{e.name}:{e.id}>"
+            emoji: discord.Emoji | None = discord.utils.get(guild.emojis, name=emoji_name)
+            if not emoji:
+                logging.info(f'[get_emoji_string] Não encontrado emoji em "{guild.name}": "{emoji_name}"')
+                return f"<:{emoji_name}>"
 
-            logging.info(f'[get_emoji_string] Não encontrado emoji em "{guild.name}": "{emoji}"')
-            return f"<:{emoji}>"
+            logging.info(f'[get_emoji_string] Encontrado emoji em "{guild.name}": "{emoji.name}" com id: "{emoji.id}"')
+            return f"<:{emoji.name}:{emoji.id}>"
 
         except Exception as e:
-            logging.error(f'[get_emoji_string] Erro ao buscar emoji: "{emoji}" - {e}')
-            return f"<:{emoji}>"
+            logging.error(f'[get_emoji_string] Erro ao buscar emoji: "{emoji_name}" - {e}')
+            return f"<:{emoji_name}>"
+
+    async def get_random_emoji_string(self) -> str:
+        """Retorna uma string com um emoji aleatório."""
+        try:
+            guild = self.get_guild(GUILD_ID)
+            if not guild:
+                logging.info(f'[get_random_emoji_string] Não encontrado servidor: "{GUILD_ID}"')
+                return ""
+
+            emojis = list(guild.emojis)
+            if not emojis:
+                logging.info(f'[get_random_emoji_string] Nenhum emoji encontrado no servidor: "{guild.name}"')
+                return ""
+
+            emoji = random.choice(emojis)
+            logging.info(f'[get_random_emoji_string] Emoji aleatório encontrado: "{emoji.name}" com id: "{emoji.id}"')
+            return f"<:{emoji.name}:{emoji.id}>"
+
+        except Exception as e:
+            logging.error(f'[get_random_emoji_string] Erro ao buscar emoji aleatório: "{e}"')
+            return ""
