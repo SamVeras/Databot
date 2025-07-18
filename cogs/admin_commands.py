@@ -1,6 +1,5 @@
 from discord.ext import commands
 import logging
-from bot import Lad
 
 
 class AdminCommands(commands.Cog):
@@ -12,11 +11,12 @@ class AdminCommands(commands.Cog):
     async def restart(self, ctx: commands.Context) -> None:
         logging.info(f"[restart: {ctx.author.name}] Reiniciando o bot...")
         await ctx.send("Reiniciando o bot...")
-        if isinstance(self.bot, Lad):  # restart é um método específico do nosso bot
-            self.bot.restart()
+        restart = getattr(self.bot, "restart", None)
+        if callable(restart):
+            restart()
         else:
-            await ctx.send("O bot não é o bot certo.")
-            logging.error(f"[restart: {ctx.author.name}] Bot não é instance do bot Lad.")
+            await ctx.send("O bot não suporta restart.")
+            logging.error(f"[restart: {ctx.author.name}] Bot não suporta restart.")
 
     @commands.hybrid_command(name="shutdown", description="Desligar o bot")
     @commands.has_permissions(administrator=True)
