@@ -43,16 +43,17 @@ class Lad(commands.Bot):
 
     def format_command_log(self, ctx: commands.Context, error: Exception | None = None) -> str:
         timestamp = ctx.message.created_at
-        command = ctx.command.name if ctx.command else "comando desconhecido"
+        command = ctx.command.name if ctx.command else "desconhecido"
         user = ctx.author
         guild = ctx.guild.name if ctx.guild else "DM"
+        guild_id = ctx.guild.id if ctx.guild else "desconhecido"
         channel = getattr(ctx.channel, "name", "DM")
         channel_id = getattr(ctx.channel, "id", "desconhecido")
 
-        log_msg = f"{command};{user.name}#{user.discriminator};({user.id});{guild};{channel};{channel_id};{timestamp}"
+        log_msg = f"[{command}: {user.name}#{user.discriminator} ({user.id})] {guild} ({guild_id}) / {channel} ({channel_id}) @ {timestamp}"
 
         if error:
-            log_msg += f", {error}"
+            log_msg += f' "{error}"'
         return log_msg
 
     async def on_command(self, ctx: commands.Context) -> None:
