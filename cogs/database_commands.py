@@ -1,30 +1,17 @@
 from discord.ext import commands
 import logging
-from config import MONGO_URI, MSG_QUEUE_SIZE, WORKERS_COUNT, BULK_SIZE
+from config import MSG_QUEUE_SIZE, WORKERS_COUNT, BULK_SIZE
 import discord
 import asyncio
-import motor.motor_asyncio
 from pymongo import UpdateOne
 
 
 class DatabaseCommands(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+
+    def __init__(self, bot) -> None:
         self.bot = bot
-
-        if not MONGO_URI:
-            logging.error("[DatabaseCommands] MONGO_URI não está configurado!")
-            raise ValueError("[DatabaseCommands] MONGO_URI environment variable is not set")
-
-        logging.info(f"[DatabaseCommands] Conectando ao MongoDB: {MONGO_URI[:22]}...")
-
-        try:
-            self.mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-            self.db = self.mongo_client["discord_data"]
-            self.collection = self.db["messages"]
-            logging.info(f"[DatabaseCommands] Conectado ao banco: {self.db.name}, coleção: {self.collection.name}")
-        except Exception as e:
-            logging.error(f"[DatabaseCommands] Erro ao conectar ao MongoDB: {e}")
-            raise ValueError(f"[DatabaseCommands] Erro ao conectar ao MongoDB: {e}")
+        self.mongo_client = bot.mongo_client
+        self.collection = bot.collections["messages"]
 
     @staticmethod
     async def message_to_dict(message: discord.Message) -> dict:
@@ -170,18 +157,19 @@ class DatabaseCommands(commands.Cog):
 
         return message_dict
 
-    async def scrape_channel_(self, ctx: commands.Context, silent: bool) -> None:
-        """Scrapear um canal."""
+    @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
+    @commands.has_permissions(administrator=True)
+    async def scrape_channel(self, ctx: commands.Context) -> None:
+        """Coletar dados do canal e salvar no banco de dados."""
         try:
-            channel_info = f"{getattr(ctx.channel, 'name', 'unknown')} (ID: {getattr(ctx.channel, 'id', 'unknown')})"
-            logging.info(f"[scrape_channel_: {ctx.author.name}] Iniciando scraping no canal: {channel_info}")
+            cname = getattr(ctx.channel, "name", "desconhecido")
+            cid = getattr(ctx.channel, "id", "desconhecido")
+            logging.info(f"[scrape_channel: {ctx.author.name}] Iniciando scraping no canal: #{cname} (ID: {cid})")
             await self.mongo_client.admin.command("ping")
             await self.collection.create_index("message_id", unique=True)
-            logging.info(f"[scrape_channel_: {ctx.author.name}] Conexão com MongoDB estabelecida")
+            logging.info(f"[scrape_channel: {ctx.author.name}] Conexão com MongoDB estabelecida")
         except Exception as e:
-            logging.error(f"[scrape_channel_: {ctx.author.name}] Erro de conexão com MongoDB: {e}")
-            if not silent:
-                await ctx.send(f"Erro de conexão com MongoDB: {e}")
+            logging.error(f"[scrape_channel: {ctx.author.name}] Erro de conexão com MongoDB: {e}")
             return
 
         async def scraper_worker(message_queue: asyncio.Queue, ready_queue: asyncio.Queue, worker_id: int) -> None:
@@ -254,8 +242,8 @@ class DatabaseCommands(commands.Cog):
             await message_queue.put(message)
             total_messages += 1
             if total_messages % 1000 == 0:
-                logging.info(f"[scrape_channel_] {total_messages} mensagens já foram recebidas da API...")
-        logging.info(f"[scrape_channel_] Total de mensagens recebidas da API: {total_messages}")
+                logging.info(f"[scrape_channel] {total_messages} mensagens já foram recebidas da API...")
+        logging.info(f"[scrape_channel] Total de mensagens recebidas da API: {total_messages}")
 
         for _ in range(WORKERS_COUNT):
             await message_queue.put(None)
@@ -267,28 +255,9 @@ class DatabaseCommands(commands.Cog):
 
         await done.wait()  # Aguardar o mongo_worker terminar
 
-        logging.info(f"[scrape_channel_] Scraping finalizado para o canal #{channel_info}. Total de mensagens: {total_messages}")
-        if not silent:
-            await ctx.send(f"Coleta de dados em #{channel_info} finalizada com sucesso! {total_messages} mensagens coletadas.")
-        elif hasattr(ctx, "interaction") and ctx.interaction is not None:
-            await ctx.send(f"Coleta de dados em #{channel_info} finalizada com sucesso! {total_messages}", ephemeral=True)
-
-    @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
-    @commands.has_permissions(administrator=True)
-    async def scrape_channel_loud(self, ctx: commands.Context) -> None:
-        cname = getattr(ctx.channel, "name", "desconhecido")
-        logging.info(f"[scrape_channel_loud: {ctx.author.name}] Iniciando scraping para o canal {cname}...")
-        await ctx.send(f"Iniciando coleta de dados em {cname}")
-        await self.scrape_channel_(ctx, silent=False)
-
-    @commands.hybrid_command(name="scrapesilent", description="Coletar dados do canal sem enviar mensagens.")
-    @commands.has_permissions(administrator=True)
-    async def scrape_channel_silent(self, ctx: commands.Context) -> None:
-        cname = getattr(ctx.channel, "name", "desconhecido")
-        logging.info(f"[scrape_channel_silent: {ctx.author.name}] Iniciando scraping para o canal {cname}...")
+        logging.info(f"[scrape_channel] Scraping finalizado para o canal #{cname} (ID: {cid}). Total de mensagens: {total_messages}")
         if hasattr(ctx, "interaction") and ctx.interaction is not None:
-            await ctx.interaction.response.send_message(f"Iniciando coleta de dados em {cname}", ephemeral=True)
-        await self.scrape_channel_(ctx, silent=True)
+            await ctx.send(f"Coleta de dados em #{cname} (ID: {cid}) finalizada com sucesso! {total_messages}", ephemeral=True)
 
     @staticmethod
     async def show_message(msg_id: dict, ctx: commands.Context) -> None:
@@ -333,7 +302,7 @@ class DatabaseCommands(commands.Cog):
             if embed_data.get("thumbnail") and embed_data["thumbnail"].get("url"):
                 embed.set_thumbnail(url=embed_data["thumbnail"].get("url"))
 
-        logging.info(f"[show_message] Enviando mensagem: {author} em {channel} com o ID {msg_id['message_id']}: {content[:20]}...")
+        logging.info(f"[show_message] Enviando mensagem: {author} em #{channel} com o ID {msg_id['message_id']}: {content[:20]}...")
         message = f"**{author}** em **#{channel}** disse: {jump_url}\n"
         if content.strip():
             message += f">>> {content}\n"
@@ -420,3 +389,11 @@ class DatabaseCommands(commands.Cog):
             stats_message += "Nenhuma mensagem encontrada por canal. wtf kkk"
 
         await ctx.send(stats_message)
+
+    @commands.hybrid_command(name="mystats", description="Mostrar estatísticas pessoais do banco de dados.")
+    async def show_my_stats(self, ctx: commands.Context) -> None:
+        """Mostrar estatísticas pessoais do banco de dados."""
+        logging.info(f"[show_my_stats: {ctx.author.name}] Mostrando estatísticas pessoais do banco de dados...")
+        total_messages = await self.collection.count_documents({"author.id": ctx.author.id})
+        await ctx.send(f"Você tem {total_messages} mensagens no banco de dados.")
+        logging.info(f"[show_my_stats: {ctx.author.name}] Estatísticas pessoais do banco de dados: {total_messages} mensagens.")

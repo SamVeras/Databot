@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = os.getenv("GUILD_ID")
+GUILD_ID = int(os.getenv("GUILD_ID", 0))
 MONGO_URI = os.getenv("MONGO_URI")
 BOT_PREFIX = "~"
 BULK_SIZE = int(os.getenv("BULK_SIZE", 500))
