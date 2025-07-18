@@ -176,7 +176,7 @@ class DatabaseCommands(commands.Cog):
             channel_info = f"{getattr(ctx.channel, 'name', 'unknown')} (ID: {getattr(ctx.channel, 'id', 'unknown')})"
             logging.info(f"[scrape_channel_: {ctx.author.name}] Iniciando scraping no canal: {channel_info}")
             await self.mongo_client.admin.command("ping")
-            await self.collection.create_index("id", unique=True)
+            await self.collection.create_index("message_id", unique=True)
             logging.info(f"[scrape_channel_: {ctx.author.name}] Conexão com MongoDB estabelecida")
         except Exception as e:
             logging.error(f"[scrape_channel_: {ctx.author.name}] Erro de conexão com MongoDB: {e}")
@@ -204,7 +204,9 @@ class DatabaseCommands(commands.Cog):
                         await ready_queue.put(data)
                         processed += 1
                     except Exception as e:
-                        logging.error(f"[scraper_worker {worker_id}] Erro ao processar mensagem {getattr(message, 'id', 'unknown')}: {e}")
+                        logging.error(
+                            f"[scraper_worker {worker_id}] Erro ao processar mensagem {getattr(message, 'message_id', 'desconhecido')}: {e}"
+                        )
             except Exception as e:
                 logging.error(f"[scraper_worker {worker_id}] Crashed: {e}")
             logging.info(f"[scraper_worker {worker_id}] Finalizado. Mensagens processadas: {processed}")
@@ -220,7 +222,7 @@ class DatabaseCommands(commands.Cog):
                     finished += 1  # Um worker terminou
                     if finished >= WORKERS_COUNT:
                         if batch:  # Mongo worker vai parar, mas pode ter algumas mensagens no batch ainda
-                            operations = [UpdateOne({"id": d["id"]}, {"$set": d}, upsert=True) for d in batch]
+                            operations = [UpdateOne({"message_id": d["message_id"]}, {"$set": d}, upsert=True) for d in batch]
                             if operations:
                                 result = await self.collection.bulk_write(operations, ordered=False)
                                 inserted += result.upserted_count + result.modified_count
@@ -230,7 +232,7 @@ class DatabaseCommands(commands.Cog):
                 # Se não for None, é uma mensagem
                 batch.append(data)
                 if len(batch) >= BATCH_SIZE:
-                    operations = [UpdateOne({"id": d["id"]}, {"$set": d}, upsert=True) for d in batch]
+                    operations = [UpdateOne({"message_id": d["message_id"]}, {"$set": d}, upsert=True) for d in batch]
                     if operations:
                         result = await self.collection.bulk_write(operations, ordered=False)
                         inserted += result.upserted_count + result.modified_count
@@ -265,11 +267,11 @@ class DatabaseCommands(commands.Cog):
 
         await done.wait()  # Aguardar o mongo_worker terminar
 
-        logging.info(f"[scrape_channel_] Scraping finalizado para o canal {channel_info}. Total de mensagens: {total_messages}")
+        logging.info(f"[scrape_channel_] Scraping finalizado para o canal #{channel_info}. Total de mensagens: {total_messages}")
         if not silent:
-            await ctx.send(f"Coleta de dados em {channel_info} finalizada com sucesso! {total_messages} mensagens coletadas.")
+            await ctx.send(f"Coleta de dados em #{channel_info} finalizada com sucesso! {total_messages} mensagens coletadas.")
         elif hasattr(ctx, "interaction") and ctx.interaction is not None:
-            await ctx.send(f"Coleta de dados em {channel_info} finalizada com sucesso! {total_messages}", ephemeral=True)
+            await ctx.send(f"Coleta de dados em #{channel_info} finalizada com sucesso! {total_messages}", ephemeral=True)
 
     @commands.hybrid_command(name="scrape", description="Coletar dados do canal.")
     @commands.has_permissions(administrator=True)
@@ -331,7 +333,7 @@ class DatabaseCommands(commands.Cog):
             if embed_data.get("thumbnail") and embed_data["thumbnail"].get("url"):
                 embed.set_thumbnail(url=embed_data["thumbnail"].get("url"))
 
-        logging.info(f"[show_message] Enviando mensagem: {author} em {channel} com o ID {msg_id['id']}: {content[:20]}...")
+        logging.info(f"[show_message] Enviando mensagem: {author} em {channel} com o ID {msg_id['message_id']}: {content[:20]}...")
         message = f"**{author}** em **#{channel}** disse: {jump_url}\n"
         if content.strip():
             message += f">>> {content}\n"
@@ -341,15 +343,15 @@ class DatabaseCommands(commands.Cog):
             await ctx.send(content=message)
 
     @commands.hybrid_command(name="show", description="Mostrar uma mensagem específica do banco de dados.")
-    async def show_message_id(self, ctx: commands.Context, message_id: int) -> None:
+    async def show_message_id(self, ctx: commands.Context, msg_id: int) -> None:
         """Mostrar uma mensagem específica do banco de dados."""
-        logging.info(f"[show_message_id: {ctx.author.name}] Mostrando mensagem: {message_id}")
+        logging.info(f"[show_message_id: {ctx.author.name}] Mostrando mensagem: {msg_id}")
         try:
-            message = await self.collection.find_one({"id": message_id})
+            message = await self.collection.find_one({"message_id": msg_id})
             if not message:
                 await ctx.send("Mensagem não encontrada no banco de dados.")
                 return
-            logging.info(f"[show_message_id: {ctx.author.name}] Mensagem encontrada: {message['id']}")
+            logging.info(f"[show_message_id: {ctx.author.name}] Mensagem encontrada: {message['message_id']}")
             await self.show_message(message, ctx)
         except Exception as e:
             logging.error(f"[show_message_id: {ctx.author.name}] Erro ao mostrar mensagem específica: {e}")
