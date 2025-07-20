@@ -340,37 +340,6 @@ class DatabaseCommands(commands.Cog):
                 message += f"> {url}\n"
             message += "\n"
 
-        # embeds = msg_id.get("embeds", [])
-        # if embeds:
-        #     for c, embed in enumerate(embeds, 1):
-        #         embed_lines = []
-        #         title = embed.get("title")
-        #         description = embed.get("description")
-        #         url = embed.get("url")
-        #         embed_type = embed.get("type")
-        #         image = embed.get("image")
-        #         video = embed.get("video")
-        #         thumbnail = embed.get("thumbnail")
-
-        #         embed_lines.append(f"-# Embed {c}")
-        #         if title:
-        #             embed_lines.append(f"-# Título: `{title}`")
-        #         if description:
-        #             embed_lines.append(f"-# Descrição: `{description[:80].replace('\n', ' ')}{'...' if len(description) > 80 else ''}`")
-        #         if url:
-        #             embed_lines.append(f"-# URL: `{url}`")
-        #         if embed_type:
-        #             embed_lines.append(f"-# Tipo: `{embed_type}`")
-
-        #         if image and image.get("url"):
-        #             embed_lines.append(f"-# Imagem: `{image['url']}`")
-        #         if video and video.get("url"):
-        #             embed_lines.append(f"-# Vídeo: `{video['url']}`")
-        #         if thumbnail and thumbnail.get("url"):
-        #             embed_lines.append(f"-# Thumbnail: `{thumbnail['url']}`")
-
-        #         message += "\n".join(embed_lines) + "\n\n"
-
         await ctx.send(content=message, allowed_mentions=discord.AllowedMentions.none())
 
         logging.info(f"[show_message] Enviando mensagem: {author} em #{channel} com o ID {msg_id['message_id']}: {content[:20]}...")
@@ -467,8 +436,23 @@ class DatabaseCommands(commands.Cog):
     # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="mystats", description="Mostrar estatísticas pessoais do banco de dados.")
     async def show_my_stats(self, ctx: commands.Context) -> None:
-        """Mostrar estatísticas pessoais do banco de dados."""
-        logging.info(f"[show_my_stats: {ctx.author.name}] Mostrando estatísticas pessoais do banco de dados...")
-        total_messages = await self.collection.count_documents({"author.id": ctx.author.id})
-        await ctx.send(f"Você tem {total_messages} mensagens no banco de dados.")
+        """Mostrar estatísticas pessoais do banco de dados no servidor."""
+        logging.info(f"[show_my_stats: {ctx.author.name}] Mostrando estatísticas pessoais {ctx.guild.name} ({ctx.guild.id})...")
+
+        total_messages: int = await self.collection.count_documents({"author.id": ctx.author.id, "guild.id": ctx.guild.id})
+        message: str = ""
+
+        if total_messages == 0:
+            message = "Você não tem nenhuma mensagem no banco de dados."
+
+        else:
+            total_messages_str = f"{total_messages:,}".replace(",", ".")
+            total_server_messages: int = await self.collection.count_documents({"guild.id": ctx.guild.id})
+            user_percentage: float = (total_messages / total_server_messages) * 100
+            message = f"Você tem {total_messages_str} mensagens no banco de dados. Isso é {user_percentage:.2f}% do total de mensagens do servidor."
+
         logging.info(f"[show_my_stats: {ctx.author.name}] Estatísticas pessoais do banco de dados: {total_messages} mensagens.")
+
+        await ctx.send(message)
+
+    # ---------------------------------------------------------------------------------------------------------------- #
