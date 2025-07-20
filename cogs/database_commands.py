@@ -340,36 +340,36 @@ class DatabaseCommands(commands.Cog):
                 message += f"> {url}\n"
             message += "\n"
 
-        embeds = msg_id.get("embeds", [])
-        if embeds:
-            for c, embed in enumerate(embeds, 1):
-                embed_lines = []
-                title = embed.get("title")
-                description = embed.get("description")
-                url = embed.get("url")
-                embed_type = embed.get("type")
-                image = embed.get("image")
-                video = embed.get("video")
-                thumbnail = embed.get("thumbnail")
+        # embeds = msg_id.get("embeds", [])
+        # if embeds:
+        #     for c, embed in enumerate(embeds, 1):
+        #         embed_lines = []
+        #         title = embed.get("title")
+        #         description = embed.get("description")
+        #         url = embed.get("url")
+        #         embed_type = embed.get("type")
+        #         image = embed.get("image")
+        #         video = embed.get("video")
+        #         thumbnail = embed.get("thumbnail")
 
-                embed_lines.append(f"-# Embed {c}")
-                if title:
-                    embed_lines.append(f"-# Título: `{title}`")
-                if description:
-                    embed_lines.append(f"-# Descrição: `{description[:80].replace('\n', ' ')}{'...' if len(description) > 80 else ''}`")
-                if url:
-                    embed_lines.append(f"-# URL: `{url}`")
-                if embed_type:
-                    embed_lines.append(f"-# Tipo: `{embed_type}`")
+        #         embed_lines.append(f"-# Embed {c}")
+        #         if title:
+        #             embed_lines.append(f"-# Título: `{title}`")
+        #         if description:
+        #             embed_lines.append(f"-# Descrição: `{description[:80].replace('\n', ' ')}{'...' if len(description) > 80 else ''}`")
+        #         if url:
+        #             embed_lines.append(f"-# URL: `{url}`")
+        #         if embed_type:
+        #             embed_lines.append(f"-# Tipo: `{embed_type}`")
 
-                if image and image.get("url"):
-                    embed_lines.append(f"-# Imagem: `{image['url']}`")
-                if video and video.get("url"):
-                    embed_lines.append(f"-# Vídeo: `{video['url']}`")
-                if thumbnail and thumbnail.get("url"):
-                    embed_lines.append(f"-# Thumbnail: `{thumbnail['url']}`")
+        #         if image and image.get("url"):
+        #             embed_lines.append(f"-# Imagem: `{image['url']}`")
+        #         if video and video.get("url"):
+        #             embed_lines.append(f"-# Vídeo: `{video['url']}`")
+        #         if thumbnail and thumbnail.get("url"):
+        #             embed_lines.append(f"-# Thumbnail: `{thumbnail['url']}`")
 
-                message += "\n".join(embed_lines) + "\n\n"
+        #         message += "\n".join(embed_lines) + "\n\n"
 
         await ctx.send(content=message, allowed_mentions=discord.AllowedMentions.none())
 
