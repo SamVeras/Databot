@@ -34,7 +34,7 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
         logging.info(f"[on_ready] Conectando ao MongoDB: {MONGO_URI[:22]}...")
 
         try:
-            self.mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
+            self.mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI, tz_aware=True, tzinfo=pytz.utc)
             self.db = self.mongo_client["discord_data"]
             self.collections = {
                 "reminders": self.db["reminders"],
@@ -67,11 +67,20 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
         """Rotina de lembretes."""
         await self.wait_until_ready()
 
+        def format_time(dt: datetime) -> str:
+            return dt.strftime("%d/%m/%Y %H:%M:%S")
+
+        brazil_tz = pytz.timezone("America/Sao_Paulo")
+
         async def send_reminder(rm: dict, ch: discord.TextChannel) -> None:
             """Envia um lembrete."""
-            emoji = await self.get_random_emoji_string()
-            mention = f"<@{rm['user_id']}>"
-            reminder_message = f"{emoji} **Lembrete:** {rm['message']}\n**Data/hora:** {rm['remind_at'].strftime('%d/%m/%Y %H:%M:%S')}\n{mention}"
+            emoji_string: str = await self.get_random_emoji_string()
+            mention: str = f"<@{rm['user_id']}>"
+            remind_time: datetime = rm["remind_at"].astimezone(brazil_tz)
+
+            logging.info(f"[reminder_loop] Lembrete: {rm['message']} para {format_time(remind_time)}")
+
+            reminder_message = f"{emoji_string} **Lembrete:** {rm['message']}\n**Data:** {format_time(remind_time)} {mention}"
             await ch.send(reminder_message)
             await self.collections["reminders"].update_one({"_id": rm["_id"]}, {"$set": {"delivered": True}})
 
@@ -81,8 +90,9 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
             return
 
         while not self.is_closed():
-            now = datetime.now(pytz.timezone("America/Sao_Paulo"))
-            logging.debug(f"[reminder_loop] Agora: {now}")
+            now = datetime.now(brazil_tz)
+
+            logging.debug(f"[reminder_loop] Agora: {format_time(now)}")
             reminders = await self.collections["reminders"].find({"remind_at": {"$lte": now}, "delivered": False}).to_list(length=100)
 
             for reminder in reminders:
@@ -91,7 +101,7 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
                 except Exception as e:
                     logging.error(f"[reminder_loop] Erro ao enviar lembrete: {e}")
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(3)
 
     # ---------------------------------------------------------------------------------------------------------------- #
     async def close(self) -> None:

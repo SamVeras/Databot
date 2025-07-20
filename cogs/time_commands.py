@@ -1,7 +1,7 @@
 from discord.ext import commands
 import logging
 import parsedatetime
-import datetime
+from datetime import datetime
 import discord
 import asyncio
 import pytz
@@ -22,7 +22,7 @@ class TimeCommands(commands.Cog):
         """Testar o parser de datas."""
         try:
             time_struct, status = self.calendar.parse(time)
-            dt = datetime.datetime(*time_struct[:6])
+            dt = datetime(*time_struct[:6])
             await ctx.send(f"`status: {status}`\n`time: {time}`\n`dt: {dt.strftime('%d/%m/%Y %H:%M:%S')}`")
         except Exception as e:
             logging.error(f"[parsetime] {e}")
@@ -31,10 +31,18 @@ class TimeCommands(commands.Cog):
     @commands.hybrid_command(name="remindme", description="Definir um lembrete.")
     async def remindme(self, ctx: commands.Context, time: str, *, reminder: str) -> None:
         """Definir um lembrete."""
-        now = datetime.datetime.now(pytz.timezone("America/Sao_Paulo"))
+
+        def format_time(dt: datetime) -> str:
+            return dt.strftime("%d/%m/%Y %H:%M:%S")
+
+        brazil_tz = pytz.timezone("America/Sao_Paulo")
+
         time_struct, status = self.calendar.parse(time)
-        remind_time = datetime.datetime(*time_struct[:6]).astimezone(pytz.timezone("America/Sao_Paulo"))
-        logging.info(f"[remindme] now: {now}, remind_time: {remind_time}, status: {status}")
+        now = datetime.now(brazil_tz)
+
+        remind_time = datetime(*time_struct[:6]).astimezone(brazil_tz)
+
+        logging.info(f"[remindme] now: {format_time(now)}, remind_time: {format_time(remind_time)}, status: {status}")
 
         if not status or remind_time < now:
             if hasattr(ctx, "interaction") and ctx.interaction is not None:
@@ -46,12 +54,12 @@ class TimeCommands(commands.Cog):
         reminder_dict = {
             "user_id": ctx.author.id,  # int
             "message": reminder,  # str
-            "remind_at": remind_time.astimezone(pytz.timezone("America/Sao_Paulo")),  # ISODate
+            "remind_at": remind_time,  # ISODate (UTC)
             "delivered": False,  # bool
         }
 
         confirm_message = await ctx.send(
-            f"Você quer definir este lembrete?\n" f"**Mensagem:** {reminder}\n" f"**Data/hora:** {remind_time.strftime('%d/%m/%Y %H:%M:%S')}\n"
+            f"Você quer definir este lembrete?\n" f"**Mensagem:** {reminder}\n" f"**Data/hora:** {format_time(remind_time)}\n"
         )
 
         try:
@@ -79,6 +87,6 @@ class TimeCommands(commands.Cog):
             return
 
         await self.collection.insert_one(reminder_dict)
-        ftime = remind_time.astimezone(pytz.timezone("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S")
+        ftime = format_time(remind_time)
         await confirm_message.clear_reactions()
         await confirm_message.edit(content=confirm_message.content + f"\n\n*Lembrete confirmado e definido para {ftime}.*")
