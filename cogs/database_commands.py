@@ -13,6 +13,7 @@ class DatabaseCommands(commands.Cog):
         self.bot = bot
         self.mongo_client = bot.mongo_client
         self.collection = bot.collections["messages"]
+        self.unique_worker_id = 1  # Para garantir que o ID de cada worker seja único, contando a partir de 1
 
     # ---------------------------------------------------------------------------------------------------------------- #
     @staticmethod
@@ -165,49 +166,56 @@ class DatabaseCommands(commands.Cog):
     async def scrape_channel(self, ctx: commands.Context) -> None:
         """Coletar dados do canal e salvar no banco de dados."""
         try:
+            await ctx.send("Iniciando scraping no canal...", ephemeral=True)
+
             cname = getattr(ctx.channel, "name", "desconhecido")
             cid = getattr(ctx.channel, "id", "desconhecido")
-            logging.info(f"[scrape_channel: {ctx.author.name}] Iniciando scraping no canal: #{cname} (ID: {cid})")
+            gname = getattr(ctx.guild, "name", "desconhecido")
+            gid = getattr(ctx.guild, "id", "desconhecido")
+            aname = getattr(ctx.author, "name", "desconhecido")
+            aid = getattr(ctx.author, "id", "desconhecido")
+            logging.info(f"[scrape_channel: #{cname}] Iniciando scraping no canal: #{cname} (ID: {cid}) em {gname} (ID: {gid}) ({aname} - ID: {aid})")
+
             await self.mongo_client.admin.command("ping")
             await self.collection.create_index("message_id", unique=True)
-            logging.info(f"[scrape_channel: {ctx.author.name}] Conexão com MongoDB estabelecida")
+            logging.info(f"[scrape_channel: #{cname}] Conexão com MongoDB estabelecida")
         except Exception as e:
-            logging.error(f"[scrape_channel: {ctx.author.name}] Erro de conexão com MongoDB: {e}")
+            logging.error(f"[scrape_channel: #{cname}] Erro de conexão com MongoDB: {e}")
             return
 
         # ---------------------------------------------- Scraper Worker ---------------------------------------------- #
         async def scraper_worker(message_queue: asyncio.Queue, ready_queue: asyncio.Queue, worker_id: int) -> None:
             """Responsável processar as mensagens da API do Discord."""
-            logging.info(f"[scraper_worker {worker_id}] Iniciado.")
+            logging.info(f"[scraper_worker {worker_id}: #{cname}] Iniciado.")
             processed = 0
             try:
                 while True:
-                    await asyncio.sleep(0.01)
                     message = await message_queue.get()
                     if message is None:
                         if processed == 0:
-                            logging.warning(f"[scraper_worker {worker_id}] Finalizando sem processar nenhuma mensagem.")
+                            logging.warning(f"[scraper_worker {worker_id}: #{cname}] Finalizando sem processar nenhuma mensagem.")
                         else:
-                            logging.info(f"[scraper_worker {worker_id}] Finalizando com {processed} mensagens processadas.")
+                            logging.info(f"[scraper_worker {worker_id}: #{cname}] Finalizando com {processed} mensagens processadas.")
                         break
                     try:
                         if processed % 100 == 0:
-                            logging.info(f"[scraper_worker {worker_id}] Processadas {processed} mensagens...")
+                            logging.info(f"[scraper_worker {worker_id}: #{cname}] Processadas {processed} mensagens...")
                         data = await self.message_to_dict(message)
                         await ready_queue.put(data)
+                        await asyncio.sleep(0)
                         processed += 1
                     except Exception as e:
                         logging.error(
-                            f"[scraper_worker {worker_id}] Erro ao processar mensagem {getattr(message, 'message_id', 'desconhecido')}: {e}"
+                            f"[scraper_worker {worker_id}: #{cname}] Erro ao processar mensagem {getattr(message, 'message_id', 'desconhecido')}: {e}"
                         )
             except Exception as e:
-                logging.error(f"[scraper_worker {worker_id}] Crashed: {e}")
-            logging.info(f"[scraper_worker {worker_id}] Finalizado. Mensagens processadas: {processed}")
+                logging.error(f"[scraper_worker {worker_id}: #{cname}] Crashed: {e}")
+            logging.info(f"[scraper_worker {worker_id}: #{cname}] Finalizado. Mensagens processadas: {processed}")
 
         # ----------------------------------------------- Mongo Worker ----------------------------------------------- #
-        async def mongo_worker() -> None:
+        async def mongo_worker(worker_id: int) -> None:
             """Responsável por inserir as mensagens no banco de dados."""
-            logging.info("[mongo_worker] Iniciado.")
+            logging.info(f"[mongo_worker {worker_id}: #{cname}] Iniciado.")
             finished = 0  # Quando todos os workers terminarem, o mongo_worker termina
             inserted = 0
             batch = []
@@ -231,10 +239,10 @@ class DatabaseCommands(commands.Cog):
                     if operations:
                         result = await self.collection.bulk_write(operations, ordered=False)
                         inserted += result.upserted_count + result.modified_count
-                        logging.info(f"[mongo_worker] Inseridas/atualizadas {len(batch)} mensagens no banco...")
+                        logging.info(f"[mongo_worker {worker_id}: #{cname}] Inseridas/atualizadas {len(batch)} mensagens no banco...")
                     batch = []
             # Todos os workers terminaram
-            logging.info(f"[mongo_worker] Finalizado. Mensagens inseridas/atualizadas: {inserted}")
+            logging.info(f"[mongo_worker {worker_id}: #{cname}] Finalizado. Mensagens inseridas/atualizadas: {inserted}")
             done.set()
 
         # --------------------------------------------------- main --------------------------------------------------- #
@@ -242,8 +250,13 @@ class DatabaseCommands(commands.Cog):
         ready_queue = asyncio.Queue(MSG_QUEUE_SIZE)  # Queue das mensagens convertidas para dicionário
         done = asyncio.Event()
 
-        workers = [asyncio.create_task(scraper_worker(message_queue, ready_queue, worker_id)) for worker_id in range(WORKERS_COUNT)]
-        mongo_task = asyncio.create_task(mongo_worker())
+        def get_worker_id() -> int:
+            w_id = self.unique_worker_id
+            self.unique_worker_id += 1
+            return w_id
+
+        workers = [asyncio.create_task(scraper_worker(message_queue, ready_queue, get_worker_id())) for _ in range(WORKERS_COUNT)]
+        mongo_task = asyncio.create_task(mongo_worker(get_worker_id()))
 
         total_messages = 0
         # Coleta as mensagens da API do Discord e coloca na fila dos workers.
@@ -252,9 +265,9 @@ class DatabaseCommands(commands.Cog):
 
             total_messages += 1
             if total_messages % 1000 == 0:
-                logging.info(f"[scrape_channel] {total_messages} mensagens já foram recebidas da API...")
+                logging.info(f"[scrape_channel: #{cname}] {total_messages} mensagens já foram recebidas da API...")
 
-        logging.info(f"[scrape_channel] Total de mensagens recebidas da API: {total_messages}")
+        logging.info(f"[scrape_channel: #{cname}] Total de mensagens recebidas da API: {total_messages}")
 
         for _ in range(WORKERS_COUNT):
             await message_queue.put(None)
@@ -264,11 +277,13 @@ class DatabaseCommands(commands.Cog):
         for _ in range(WORKERS_COUNT):
             await ready_queue.put(None)
 
-        await done.wait()  # Aguardar o mongo_worker terminar
-
-        logging.info(f"[scrape_channel] Scraping finalizado para o canal #{cname} (ID: {cid}). Total de mensagens: {total_messages}")
-        if hasattr(ctx, "interaction") and ctx.interaction is not None:
+        logging.info(f"[scrape_channel: #{cname}] Scraping finalizado para o canal #{cname} (ID: {cid}). Total de mensagens: {total_messages}")
+        try:
             await ctx.send(f"Coleta de dados em #{cname} (ID: {cid}) finalizada com sucesso! {total_messages}", ephemeral=True)
+        except Exception as e:
+            logging.error(f"[scrape_channel: #{cname}] Erro ao enviar mensagem: {e}")
+
+        await done.wait()  # Aguardar o mongo_worker terminar
 
     # ---------------------------------------------------------------------------------------------------------------- #
     @staticmethod
