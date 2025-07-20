@@ -305,35 +305,47 @@ class DatabaseCommands(commands.Cog):
         image_extensions = (".png", ".jpg", ".jpeg", ".gif", ".webp")
         video_extensions = (".mp4", ".webm", ".mov", ".avi", ".mkv")
 
-        embed = discord.Embed(description=content if content else "*Sem texto*", color=discord.Color.blue())
-        embed.set_author(name=author, icon_url=msg_id["author"].get("avatar_url", ""))
-        embed.add_field(name="Canal", value=f"{channel_mention}", inline=True)
-        embed.add_field(name="ID", value=msg_id["message_id"], inline=True)
-        if jump_url:
-            embed.add_field(name="Link", value=f"{jump_url}", inline=False)
-        embed.set_footer(text=f"Solicitado por {ctx.author.display_name}")
-
         message = f"{author_mention} em {jump_url} disse:\n"
         if content.strip():
             message += f">>> {content}\n"
         message += "\n"
 
         attachments = msg_id.get("attachments", [])
-        image_set = False
+        files = []
+        image_urls = []
+        video_urls = []
+        other_urls = []
+
         for att in attachments:
             url = att.get("url")
             filename = att.get("filename", "")
             if not url:
                 continue
-            if filename.lower().endswith(image_extensions) and not image_set:
-                embed.set_image(url=url)
-                image_set = True
+            if filename.lower().endswith(image_extensions):
+                image_urls.append(url)
             elif filename.lower().endswith(video_extensions):
-                embed.add_field(name="Vídeo", value=url, inline=False)
+                video_urls.append(url)
             else:
-                embed.add_field(name="Anexo", value=url, inline=False)
+                other_urls.append(url)
 
-        await ctx.send(embed=embed, content=message)
+        await ctx.send(content=message)
+
+        for url in image_urls:
+            await ctx.send(content="Imagem:", embed=discord.Embed().set_image(url=url))
+
+        for url in video_urls:
+            await ctx.send(content=f"Vídeo: {url}")
+
+        for url in other_urls:
+            await ctx.send(content=f"Anexo: {url}")
+
+        original_embeds = msg_id.get("embeds", [])
+        for embed_data in original_embeds:
+            try:
+                embed = discord.Embed.from_dict(embed_data)
+                await ctx.send(embed=embed)
+            except Exception as e:
+                logging.error(f"[show_message] Erro ao reconstruir embed: {e}")
 
         logging.info(f"[show_message] Enviando mensagem: {author} em #{channel} com o ID {msg_id['message_id']}: {content[:20]}...")
 
