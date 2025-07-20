@@ -400,24 +400,30 @@ class DatabaseCommands(commands.Cog):
         """Mostrar estatísticas do banco de dados."""
         logging.info(f"[show_stats: {ctx.author.name}] Mostrando estatísticas do banco de dados...")
 
-        total_messages = await self.collection.count_documents({})
+        guild_id = getattr(ctx.guild, "id", None)
+        if guild_id is None:
+            await ctx.send("Este comando só pode ser usado em um servidor.")
+            return
+
+        total_messages = await self.collection.count_documents({"guild.id": guild_id})
         pipeline = [
+            {"$match": {"guild.id": guild_id}},
             {"$group": {"_id": {"name": "$channel.name"}, "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
+            {"$sort": {"_id.name": 1}},
         ]
         channel_counts_cursor = self.collection.aggregate(pipeline)
         channel_counts = await channel_counts_cursor.to_list(length=None)
 
-        stats_message = f"**Total de mensagens salvas:** {total_messages}\n"
+        stats_message = f"**Total de mensagens salvas neste servidor:** {total_messages:,}".replace(",", ".") + "\n"
         if channel_counts:
             i = 1
             for channel in channel_counts:
                 channel_name = channel["_id"].get("name", "Desconhecido")
                 count = channel["count"]
-                stats_message += f"{i}. `#{channel_name}`: {count} mensagens\n"
+                stats_message += f"{i}. `#{channel_name}`: {count:,}".replace(",", ".") + " mensagens\n"
                 i += 1
         else:
-            stats_message += "Nenhuma mensagem encontrada por canal. wtf kkk"
+            stats_message += "Nenhuma mensagem encontrada por canal neste servidor."
 
         await ctx.send(stats_message)
 
