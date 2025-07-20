@@ -295,48 +295,47 @@ class DatabaseCommands(commands.Cog):
             author = msg_id["author"]["name"]
             author_mention = await self.bot.get_user_mention(msg_id["author"]["name"])
             channel = msg_id["channel"]["name"]
+            channel_mention = await self.bot.get_channel_mention(msg_id["channel"]["name"])
             jump_url = msg_id.get("jump_url")
         except Exception as e:
             logging.error(f"[show_message: {ctx.author.name}] Erro ao mostrar mensagem: {e}")
             await ctx.send("Erro ao tentar buscar a mensagem.")
             return
 
-        embed = None
+        image_extensions = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+        video_extensions = (".mp4", ".webm", ".mov", ".avi", ".mkv")
 
-        attachments = msg_id.get("attachments", [])
-        if attachments:
-            embed = discord.Embed()
-            for attachment in attachments:
-                url = attachment.get("url")
-                filename = attachment.get("filename", "")
-                if url and filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    embed.set_image(url=url)
-                    break
-            for attachment in attachments:
-                url = attachment.get("url")
-                filename = attachment.get("filename", "")
-                if url:
-                    embed.add_field(name="Anexo", value=f"[{filename}]({url})", inline=True)
-        elif msg_id.get("embeds"):
-            embed_data = msg_id["embeds"][0]
-            embed = discord.Embed(
-                title=embed_data.get("title"),
-                description=embed_data.get("description"),
-                url=embed_data.get("url"),
-            )
-            if embed_data.get("image") and embed_data["image"].get("url"):
-                embed.set_image(url=embed_data["image"].get("url"))
-            if embed_data.get("thumbnail") and embed_data["thumbnail"].get("url"):
-                embed.set_thumbnail(url=embed_data["thumbnail"].get("url"))
+        embed = discord.Embed(description=content if content else "*Sem texto*", color=discord.Color.blue())
+        embed.set_author(name=author, icon_url=msg_id["author"].get("avatar_url", ""))
+        embed.add_field(name="Canal", value=f"{channel_mention}", inline=True)
+        embed.add_field(name="ID", value=msg_id["message_id"], inline=True)
+        if jump_url:
+            embed.add_field(name="Link", value=f"{jump_url}", inline=False)
+        embed.set_footer(text=f"Solicitado por {ctx.author.display_name}")
 
-        logging.info(f"[show_message] Enviando mensagem: {author} em #{channel} com o ID {msg_id['message_id']}: {content[:20]}...")
         message = f"{author_mention} em {jump_url} disse:\n"
         if content.strip():
             message += f">>> {content}\n"
-        if embed:
-            await ctx.send(content=message, embed=embed, allowed_mentions=discord.AllowedMentions.none())
-        else:
-            await ctx.send(content=message, allowed_mentions=discord.AllowedMentions.none())
+        message += "\n"
+
+        attachments = msg_id.get("attachments", [])
+        image_set = False
+        for att in attachments:
+            url = att.get("url")
+            filename = att.get("filename", "")
+            if not url:
+                continue
+            if filename.lower().endswith(image_extensions) and not image_set:
+                embed.set_image(url=url)
+                image_set = True
+            elif filename.lower().endswith(video_extensions):
+                embed.add_field(name="Vídeo", value=url, inline=False)
+            else:
+                embed.add_field(name="Anexo", value=url, inline=False)
+
+        await ctx.send(embed=embed, content=message)
+
+        logging.info(f"[show_message] Enviando mensagem: {author} em #{channel} com o ID {msg_id['message_id']}: {content[:20]}...")
 
     # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="show", description="Mostrar uma mensagem específica do banco de dados.")
