@@ -295,7 +295,6 @@ class DatabaseCommands(commands.Cog):
             author = msg_id["author"]["name"]
             author_mention = await self.bot.get_user_mention(msg_id["author"]["name"])
             channel = msg_id["channel"]["name"]
-            channel_mention = await self.bot.get_channel_mention(msg_id["channel"]["name"])
             jump_url = msg_id.get("jump_url")
         except Exception as e:
             logging.error(f"[show_message: {ctx.author.name}] Erro ao mostrar mensagem: {e}")
@@ -307,11 +306,11 @@ class DatabaseCommands(commands.Cog):
 
         message = f"{author_mention} em {jump_url} disse:\n"
         if content.strip():
-            message += f">>> {content}\n"
+            for line in content.split("\n"):
+                message += f"> {line}\n"
         message += "\n"
 
         attachments = msg_id.get("attachments", [])
-        files = []
         image_urls = []
         video_urls = []
         other_urls = []
@@ -328,24 +327,51 @@ class DatabaseCommands(commands.Cog):
             else:
                 other_urls.append(url)
 
-        await ctx.send(content=message)
+        if image_urls:
+            for url in image_urls:
+                message += f"> {url}\n"
+            message += "\n"
+        if video_urls:
+            for url in video_urls:
+                message += f"> {url}\n"
+            message += "\n"
+        if other_urls:
+            for url in other_urls:
+                message += f"> {url}\n"
+            message += "\n"
 
-        for url in image_urls:
-            await ctx.send(content="Imagem:", embed=discord.Embed().set_image(url=url))
+        embeds = msg_id.get("embeds", [])
+        if embeds:
+            for c, embed in enumerate(embeds, 1):
+                embed_lines = []
+                title = embed.get("title")
+                description = embed.get("description")
+                url = embed.get("url")
+                embed_type = embed.get("type")
+                image = embed.get("image")
+                video = embed.get("video")
+                thumbnail = embed.get("thumbnail")
 
-        for url in video_urls:
-            await ctx.send(content=f"Vídeo: {url}")
+                embed_lines.append(f"-# Embed {c}")
+                if title:
+                    embed_lines.append(f"-# Título: `{title}`")
+                if description:
+                    embed_lines.append(f"-# Descrição: `{description[:80].replace('\n', ' ')}{'...' if len(description) > 80 else ''}`")
+                if url:
+                    embed_lines.append(f"-# URL: `{url}`")
+                if embed_type:
+                    embed_lines.append(f"-# Tipo: `{embed_type}`")
 
-        for url in other_urls:
-            await ctx.send(content=f"Anexo: {url}")
+                if image and image.get("url"):
+                    embed_lines.append(f"-# Imagem: `{image['url']}`")
+                if video and video.get("url"):
+                    embed_lines.append(f"-# Vídeo: `{video['url']}`")
+                if thumbnail and thumbnail.get("url"):
+                    embed_lines.append(f"-# Thumbnail: `{thumbnail['url']}`")
 
-        original_embeds = msg_id.get("embeds", [])
-        for embed_data in original_embeds:
-            try:
-                embed = discord.Embed.from_dict(embed_data)
-                await ctx.send(embed=embed)
-            except Exception as e:
-                logging.error(f"[show_message] Erro ao reconstruir embed: {e}")
+                message += "\n".join(embed_lines) + "\n\n"
+
+        await ctx.send(content=message, allowed_mentions=discord.AllowedMentions.none())
 
         logging.info(f"[show_message] Enviando mensagem: {author} em #{channel} com o ID {msg_id['message_id']}: {content[:20]}...")
 

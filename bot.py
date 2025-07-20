@@ -225,7 +225,7 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
         channel: discord.abc.GuildChannel | None = await self.get_channel_by_name(channel_name, guild_id)
         if not channel:
             logging.error(f"[get_channel_mention] Não encontrado o canal: #{channel_name} em {guild_id if guild_id else GUILD_ID}")
-            return ""
+            return f"#{channel_name}"
         return f"<#{channel.id}>"
 
     # ---------------------------------------------------------------------------------------------------------------- #
@@ -234,7 +234,7 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
         user: discord.Member | None = await self.get_member_by_name(user_name, guild_id)
         if not user:
             logging.error(f"[get_user_mention] Não encontrado o usuário: {user_name} em {guild_id if guild_id else GUILD_ID}")
-            return ""
+            return f"@{user_name}"
         return f"<@{user.id}>"
 
     # ---------------------------------------------------------------------------------------------------------------- #
