@@ -286,15 +286,15 @@ class DatabaseCommands(commands.Cog):
         await done.wait()  # Aguardar o mongo_worker terminar
 
     # ---------------------------------------------------------------------------------------------------------------- #
-    @staticmethod
-    async def show_message(msg_id: dict, ctx: commands.Context) -> None:
+    async def show_message(self, msg_id: dict, ctx: commands.Context) -> None:
         """Mostrar uma mensagem específica do banco de dados."""
         logging.info(f"[show_message: {ctx.author.name}] Mostrando mensagem: {msg_id['message_id']}")
 
         try:
             content = msg_id.get("content_clean") or ""
-            author = msg_id["author"]["name"] if msg_id.get("author") else "Desconhecido"
-            channel = msg_id["channel"]["name"] if msg_id.get("channel") else "não sei onde"
+            author = msg_id["author"]["name"]
+            author_mention = await self.bot.get_user_mention(msg_id["author"]["name"])
+            channel = msg_id["channel"]["name"]
             jump_url = msg_id.get("jump_url")
         except Exception as e:
             logging.error(f"[show_message: {ctx.author.name}] Erro ao mostrar mensagem: {e}")
@@ -330,13 +330,13 @@ class DatabaseCommands(commands.Cog):
                 embed.set_thumbnail(url=embed_data["thumbnail"].get("url"))
 
         logging.info(f"[show_message] Enviando mensagem: {author} em #{channel} com o ID {msg_id['message_id']}: {content[:20]}...")
-        message = f"**{author}** em **#{channel}** disse: {jump_url}\n"
+        message = f"{author_mention} em {jump_url} disse:\n"
         if content.strip():
             message += f">>> {content}\n"
         if embed:
-            await ctx.send(content=message, embed=embed)
+            await ctx.send(content=message, embed=embed, allowed_mentions=discord.AllowedMentions.none())
         else:
-            await ctx.send(content=message)
+            await ctx.send(content=message, allowed_mentions=discord.AllowedMentions.none())
 
     # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="show", description="Mostrar uma mensagem específica do banco de dados.")

@@ -92,7 +92,6 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
         while not self.is_closed():
             now = datetime.now(brazil_tz)
 
-            logging.debug(f"[reminder_loop] Agora: {format_time(now)}")
             reminders = await self.collections["reminders"].find({"remind_at": {"$lte": now}, "delivered": False}).to_list(length=100)
 
             for reminder in reminders:
@@ -101,7 +100,7 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
                 except Exception as e:
                     logging.error(f"[reminder_loop] Erro ao enviar lembrete: {e}")
 
-            await asyncio.sleep(3)
+            await asyncio.sleep(5)
 
     # ---------------------------------------------------------------------------------------------------------------- #
     async def close(self) -> None:
