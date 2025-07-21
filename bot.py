@@ -27,36 +27,31 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
         self._command_times = {}
         self.reminder_task = None
 
-        if not MONGO_URI:
-            logging.error("[on_ready] MONGO_URI não encontrado nas variáveis de ambiente.")
-            raise ValueError("[on_ready] MONGO_URI não encontrado nas variáveis de ambiente.")
-
-        logging.info(f"[on_ready] Conectando ao MongoDB: {MONGO_URI[:22]}...")
-
         try:
+            logging.info(f"[__init__] Conectando ao MongoDB: {MONGO_URI[:22]}...")
             self.mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI, tz_aware=True, tzinfo=pytz.utc)
             self.db = self.mongo_client["discord_data"]
             self.collections = {
                 "reminders": self.db["reminders"],
                 "messages": self.db["messages"],
             }
-            logging.info(f"[on_ready] Conectado ao MongoDB: {self.db.name}, coleções: {', '.join(self.collections.keys())}")
+            logging.info(f"[__init__] Conectado ao MongoDB: {self.db.name}, coleções: {', '.join(self.collections.keys())}")
         except Exception as e:
-            logging.error(f"[on_ready] Falha ao conectar ao MongoDB: {e}")
-            raise ValueError(f"[on_ready] Falha ao conectar ao MongoDB: {e}")
+            logging.error(f"[__init__] Falha ao conectar ao MongoDB: {e}")
+            raise ValueError(f"[__init__] Falha ao conectar ao MongoDB: {e}")
 
     # ---------------------------------------------------------------------------------------------------------------- #
     async def on_ready(self) -> None:
         """Executa quando o bot está pronto."""
-        logging.info(f"[on_ready] Logado como {self.user}.")
+        logging.info(f"[on_ready] Logado como {self.user.name}.")
 
         try:
             synced = await self.tree.sync()
-            logging.info(f"[on_ready] Sincronizados {len(synced)} comando(s)")
+            logging.info(f"[on_ready] Sincronizados {len(synced)} comando(s).")
             for synced_command in synced:
-                logging.info(f"[on_ready] Comando registrado: {synced_command.name}")
+                logging.info(f"[on_ready] Comando registrado: {synced_command.name}.")
         except Exception as e:
-            logging.error(f"[on_ready] Falha ao sincronizar comandos: {e}")
+            logging.error(f"[on_ready] Falha ao sincronizar comandos: {e}.")
 
         if self.reminder_task is None:
             logging.info(f"[on_ready] Iniciando loop de lembretes em #{REMINDER_CHANNEL_NAME}...")

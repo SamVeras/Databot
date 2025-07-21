@@ -14,44 +14,88 @@ def signal_handler(signum: int, frame: types.FrameType | None) -> None:
         asyncio.create_task(bot.close())
 
 
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+def unique_timestamp_id() -> str:
+    from uuid import uuid4
+    from datetime import datetime
+
+    now: str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id: str = uuid4().hex[:8]
+
+    return f"{now}_{unique_id}"
+
+
+def setup_logging() -> None:
+    import sys
+    import os
+
+    os.makedirs("logs", exist_ok=True)
+
+    formatter = logging.Formatter(
+        fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         style="%",
-        handlers=[
-            logging.FileHandler("bot.log", mode="a", encoding="utf-8", errors="backslashreplace"),
-            logging.StreamHandler(),
-        ],
     )
 
-    logging.info("[main] Configuração do logging concluída.")
-    logging.info("[main] Iniciando bot...")
+    stream_handler = logging.StreamHandler(
+        stream=sys.stdout,
+    )
 
-    if not GUILD_ID:
-        logging.error("[main] GUILD_ID não encontrado nas variáveis de ambiente.")
-        exit(1)
+    file_handler = logging.FileHandler(
+        f"logs/databot_{unique_timestamp_id()}.log",
+    )
 
-    if not DISCORD_TOKEN:
-        logging.error("[main] DISCORD_TOKEN não encontrado nas variáveis de ambiente.")
-        exit(1)
+    stream_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
 
-    if not MONGO_URI:
-        logging.error("[main] MONGO_URI não encontrado nas variáveis de ambiente.")
-        exit(1)
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[stream_handler, file_handler],
+    )
 
-    conf_msg = f"GUILD_ID: {GUILD_ID}, MONGO_URI: {MONGO_URI[:22]}..., BULK_SIZE: {BULK_SIZE}, WORKERS_COUNT: {WORKERS_COUNT}, MSG_QUEUE_SIZE: {MSG_QUEUE_SIZE}"
-    logging.debug(f"[main] {conf_msg}")
+    logging.info("[setup_logging] Configuração do logging concluída.")
 
+
+def check_env_vars() -> None:
+    env_vars = {
+        DISCORD_TOKEN: "DISCORD_TOKEN",
+        BOT_PREFIX: "BOT_PREFIX",
+        MONGO_URI: "MONGO_URI",
+        GUILD_ID: "GUILD_ID",
+        BULK_SIZE: "BULK_SIZE",
+        WORKERS_COUNT: "WORKERS_COUNT",
+        MSG_QUEUE_SIZE: "MSG_QUEUE_SIZE",
+    }
+
+    for var, var_name in env_vars.items():
+        if not var:
+            logging.error(f"[check_env_vars] {var_name} não encontrado nas variáveis de ambiente.")
+            exit(1)
+        var_out = str(var)
+        if len(var_out) > 8:
+            var_out = var_out[:8] + "..."
+        logging.info(f"[check_env_vars] {var_name}: {var_out} ")
+
+    logging.info("[check_env_vars] Variáveis de ambiente verificadas.")
+
+
+if __name__ == "__main__":
+
+    setup_logging()
+    logging.info("[main] Verificando variáveis de ambiente...")
+
+    check_env_vars()
+
+    logging.info("[main] Inicializando bot...")
     bot = Lad(command_prefix=commands.when_mentioned_or(BOT_PREFIX), intents=discord.Intents.all())
     logging.info("[main] Bot inicializado com sucesso.")
 
+    logging.info("[main] Registrando sinais de interrupção...")
     signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
     signal.signal(signal.SIGTERM, signal_handler)  # Terminação do processo
     logging.info("[main] Sinais de interrupção registrado.")
 
     try:
+        logging.info("[main] Iniciando bot...")
         bot.run(DISCORD_TOKEN)
     except KeyboardInterrupt:
         logging.info("[main] Interrupção do teclado detectada, desligando bot...")
