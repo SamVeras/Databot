@@ -414,10 +414,10 @@ class DatabaseCommands(commands.Cog):
             await ctx.send("Erro ao tentar buscar uma mensagem fixada aleatória.")
 
     # ---------------------------------------------------------------------------------------------------------------- #
-    @commands.hybrid_command(name="stats", description="Mostrar estatísticas do banco de dados.")
-    async def show_stats(self, ctx: commands.Context) -> None:
+    @commands.hybrid_command(name="fullstats", description="Mostrar estatísticas do banco de dados.")
+    async def show_fullstats(self, ctx: commands.Context) -> None:
         """Mostrar estatísticas do banco de dados."""
-        logging.info(f"[show_stats: {ctx.author.name}] Mostrando estatísticas do banco de dados...")
+        logging.info(f"[show_fullstats: {ctx.author.name}] Mostrando estatísticas do banco de dados...")
 
         guild_id = getattr(ctx.guild, "id", None)
         if guild_id is None:
@@ -443,6 +443,28 @@ class DatabaseCommands(commands.Cog):
                 i += 1
         else:
             stats_message += "Nenhuma mensagem encontrada por canal neste servidor."
+
+        await ctx.send(stats_message)
+
+    # ---------------------------------------------------------------------------------------------------------------- #
+    @commands.hybrid_command(name="stats", description="Mostrar estatísticas do banco de dados.")
+    async def show_stats(self, ctx: commands.Context) -> None:
+        """Mostrar estatísticas do banco de dados."""
+        logging.info(f"[show_stats: {ctx.author.name}] Mostrando estatísticas do banco de dados...")
+
+        guild_id = getattr(ctx.guild, "id", None)
+        channel_id = getattr(ctx.channel, "id", None)
+        if guild_id is None or channel_id is None:
+            await ctx.send("Este comando só pode ser usado em um canal de servidor.")
+            return
+
+        total_messages = await self.collection.count_documents({"guild.id": guild_id})
+        channel_messages = await self.collection.count_documents({"guild.id": guild_id, "channel.id": channel_id})
+
+        total_messages_str = f"{total_messages:,}".replace(",", ".")
+        channel_messages_str = f"{channel_messages:,}".replace(",", ".")
+
+        stats_message = f"{total_messages_str} mensagens salvas neste servidor. {channel_messages_str} salvas nesse canal."
 
         await ctx.send(stats_message)
 

@@ -26,17 +26,3 @@ class TestCommands(commands.Cog):
     async def repetir(self, ctx: commands.Context, *, mensagem: str) -> None:
         logging.info(f"[repetir: {ctx.author.name}] Repetindo mensagem: {mensagem}")
         await ctx.send(mensagem)
-
-    # ---------------------------------------------------------------------------------------------------------------- #
-    @commands.hybrid_command(name="admintest", description="Testar permissões")
-    @commands.has_permissions(administrator=True)
-    async def admintest(self, ctx: commands.Context) -> None:
-        logging.info(f"[admintest: {ctx.author.name}] Testando comando admin...")
-        await ctx.send("Comando admin executado!")
-
-    # ---------------------------------------------------------------------------------------------------------------- #
-    @commands.hybrid_command(name="nonadmintest", description="Testar permissões")
-    @commands.has_permissions(administrator=False)
-    async def nonadmintest(self, ctx: commands.Context) -> None:
-        logging.info(f"[nonadmintest: {ctx.author.name}] Testando comando nonadmin...")
-        await ctx.send("Comando nonadmin executado!")
