@@ -361,12 +361,20 @@ class DatabaseCommands(commands.Cog):
             await ctx.send("Erro ao tentar buscar uma mensagem específica.")
 
     # ---------------------------------------------------------------------------------------------------------------- #
-    @commands.hybrid_command(name="random", description="Mostrar uma mensagem aleatória do banco de dados.")
-    async def show_random_message(self, ctx: commands.Context) -> None:
-        """Mostrar uma mensagem aleatória do banco de dados."""
+    @commands.hybrid_command(name="random", description="Mostrar uma mensagem aleatória (pode especificar usuário, se quiser).")
+    async def show_random_message(self, ctx: commands.Context, user: discord.User | None = None) -> None:
+        """Mostrar uma mensagem aleatória do banco de dados, opcionalmente filtrando por usuário."""
         logging.info(f"[show_random_message: {ctx.author.name}] Mostrando mensagem aleatória...")
+
         try:
-            cursor = self.collection.aggregate([{"$sample": {"size": 1}}])
+            match = {"author.id": user.id} if user else {}
+
+            pipeline = []
+            if match:
+                pipeline.append({"$match": match})
+            pipeline.append({"$sample": {"size": 1}})
+
+            cursor = self.collection.aggregate(pipeline)
             message_list = await cursor.to_list(length=1)
             message = message_list[0] if message_list else None
 
@@ -381,12 +389,17 @@ class DatabaseCommands(commands.Cog):
             await ctx.send("Erro ao tentar buscar uma mensagem aleatória.")
 
     # ---------------------------------------------------------------------------------------------------------------- #
-    @commands.hybrid_command(name="randomfix", description="Mostrar uma mensagem fixada aleatória do banco de dados.")
-    async def show_random_fix_message(self, ctx: commands.Context) -> None:
-        """Mostrar uma mensagem fixada aleatória do banco de dados."""
+    @commands.hybrid_command(name="randomfix", description="Mostrar uma mensagem fixada aleatória do banco de dados (pode especificar canal).")
+    async def show_random_fix_message(self, ctx: commands.Context, channel: discord.TextChannel | None = None) -> None:
+        """Mostrar uma mensagem fixada aleatória do banco de dados, opcionalmente filtrando por canal."""
         logging.info(f"[show_random_fix_message: {ctx.author.name}] Mostrando mensagem fixada aleatória...")
         try:
-            cursor = self.collection.aggregate([{"$match": {"is_pinned": True}}, {"$sample": {"size": 1}}])
+            match = {"is_pinned": True}
+            if channel:
+                match["channel.id"] = channel.id
+
+            pipeline = [{"$match": match}, {"$sample": {"size": 1}}]
+            cursor = self.collection.aggregate(pipeline)
             message_list = await cursor.to_list(length=1)
             message = message_list[0] if message_list else None
 
