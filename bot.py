@@ -54,11 +54,11 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
             logging.error(f"[on_ready] Falha ao sincronizar comandos: {e}.")
 
         if self.reminder_task is None:
-            logging.info(f"[on_ready] Iniciando loop de lembretes em #{REMINDER_CHANNEL_NAME}...")
+            logging.info(f"[on_ready] Iniciando loop de lembretes. Fallback: #{REMINDER_CHANNEL_NAME}...")
             self.reminder_task = self.loop.create_task(self.reminder_loop(REMINDER_CHANNEL_NAME))
 
     # ---------------------------------------------------------------------------------------------------------------- #
-    async def reminder_loop(self, channel_name: str) -> None:
+    async def reminder_loop(self, fallback_channel: str) -> None:
         """Rotina de lembretes."""
         await self.wait_until_ready()
 
@@ -79,9 +79,9 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
             await ch.send(reminder_message)
             await self.collections["reminders"].update_one({"_id": rm["_id"]}, {"$set": {"delivered": True}})
 
-        channel: discord.abc.GuildChannel | None = await self.get_channel_by_name(channel_name)
-        if not isinstance(channel, discord.TextChannel):
-            logging.error(f"[reminder_loop] Canal de lembretes não é um TextChannel: #{channel_name}")
+        fallback: discord.abc.GuildChannel | None = await self.get_channel_by_name(fallback_channel)
+        if not isinstance(fallback, discord.TextChannel):
+            logging.error(f"[reminder_loop] Canal fallback para lembretes não é um TextChannel: #{fallback_channel}")
             return
 
         while not self.is_closed():
@@ -91,6 +91,9 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
 
             for reminder in reminders:
                 try:
+                    channel = self.get_channel(reminder["channel_id"])
+                    if not channel:
+                        channel = fallback
                     await send_reminder(reminder, channel)
                 except Exception as e:
                     logging.error(f"[reminder_loop] Erro ao enviar lembrete: {e}")

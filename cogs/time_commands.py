@@ -53,6 +53,7 @@ class TimeCommands(commands.Cog):
 
         reminder_dict = {
             "user_id": ctx.author.id,  # int
+            "channel_id": ctx.channel.id,  # int
             "message": reminder,  # str
             "remind_at": remind_time,  # ISODate (UTC)
             "delivered": False,  # bool

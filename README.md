@@ -19,7 +19,7 @@ MONGO_URI={string de conexão do MongoDB}
 MSG_QUEUE_SIZE={tamanho da fila de mensagens que o bot processa}
 WORKERS_COUNT={número de threads que irão processar mensagens}
 BULK_SIZE={número de mensagens para cada inserção}
-REMINDER_CHANNEL_NAME={nome do canal para mandar lembretes}
+REMINDER_CHANNEL_NAME={nome do canal para lembretes (caso o canal em que o lembrete foi criado não exista mais, ou seja inacessível)}
 ```
 
 ```bash
