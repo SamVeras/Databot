@@ -182,11 +182,14 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
         """Retorna uma string com o código do emoji, ou o nome do emoji se não achar."""
         try:
             logging.info(f'[get_emoji_string] Buscando emoji: "{emoji_name}"')
-            emoji: discord.Emoji | None = await self.get_emoji_by_name(emoji_name)
-            if not emoji:
-                return f"<:{emoji_name}>"
 
-            return f"<:{emoji.name}:{emoji.id}>"
+            emoji: discord.Emoji | None = await self.get_emoji_by_name(emoji_name)
+
+            if not emoji:
+                logging.info(f"[get_emoji_string] Emoji '{emoji_name}' não encontrado.")
+                return f":{emoji_name}:"
+
+            return f"<{'a' if emoji.animated else ''}:{emoji.name}:{emoji.id}>"
 
         except Exception as e:
             logging.error(f'[get_emoji_string] Erro ao buscar emoji: "{emoji_name}" - {e}')

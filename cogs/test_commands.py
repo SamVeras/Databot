@@ -1,3 +1,4 @@
+from doctest import debug_script
 from discord.ext import commands
 import logging
 
@@ -26,3 +27,9 @@ class TestCommands(commands.Cog):
     async def repetir(self, ctx: commands.Context, *, mensagem: str) -> None:
         logging.info(f"[repetir: {ctx.author.name}] Repetindo mensagem: {mensagem}")
         await ctx.send(mensagem)
+
+    # ---------------------------------------------------------------------------------------------------------------- #
+    @commands.hybrid_command(name="testemoji", description="Testar envio de emoji")
+    async def test_emoji(self, ctx: commands.Context, emoji_name: str):
+        emoji: str = await self.bot.get_emoji_string(emoji_name)
+        await ctx.send(emoji)
