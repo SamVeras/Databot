@@ -1,4 +1,4 @@
-from config import DISCORD_TOKEN, BOT_PREFIX, GUILD_ID, MONGO_URI, BULK_SIZE, WORKERS_COUNT, MSG_QUEUE_SIZE
+from config import DISCORD_TOKEN, BOT_PREFIX, GUILD_ID, MONGO_URI, BULK_SIZE, WORKERS_COUNT, MSG_QUEUE_SIZE, ACTIVITY_MESSAGE
 import discord
 from discord.ext import commands
 import logging
@@ -50,6 +50,7 @@ def setup_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
         handlers=[stream_handler, file_handler],
+        encoding="utf-8",
     )
 
     logging.info("[setup_logging] Configuração do logging concluída.")
@@ -64,6 +65,7 @@ def check_env_vars() -> None:
         BULK_SIZE: "BULK_SIZE",
         WORKERS_COUNT: "WORKERS_COUNT",
         MSG_QUEUE_SIZE: "MSG_QUEUE_SIZE",
+        ACTIVITY_MESSAGE: "ACTIVITY_MESSAGE",
     }
 
     for var, var_name in env_vars.items():
@@ -86,7 +88,11 @@ if __name__ == "__main__":
     check_env_vars()
 
     logging.info("[main] Inicializando bot...")
-    bot = Lad(command_prefix=commands.when_mentioned_or(BOT_PREFIX), intents=discord.Intents.all())
+    bot = Lad(
+        command_prefix=commands.when_mentioned_or(BOT_PREFIX),
+        intents=discord.Intents.all(),
+        activity=discord.CustomActivity(ACTIVITY_MESSAGE),
+    )
     logging.info("[main] Bot inicializado com sucesso.")
 
     logging.info("[main] Registrando sinais de interrupção...")

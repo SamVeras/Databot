@@ -10,3 +10,4 @@ BULK_SIZE = int(os.getenv("BULK_SIZE"))  # 500
 WORKERS_COUNT = int(os.getenv("WORKERS_COUNT"))  # 10
 MSG_QUEUE_SIZE = int(os.getenv("MSG_QUEUE_SIZE"))  # 500
 REMINDER_CHANNEL_NAME = os.getenv("REMINDER_CHANNEL_NAME")  # "lembretes"
+ACTIVITY_MESSAGE = os.getenv("ACTIVITY_MESSAGE")  # mensagem de atividade
