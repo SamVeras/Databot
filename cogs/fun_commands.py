@@ -1,5 +1,7 @@
 from discord.ext import commands
+from googlesearch import search, SearchResult
 import logging
+import discord
 
 
 class FunCommands(commands.Cog):
@@ -13,16 +15,16 @@ class FunCommands(commands.Cog):
     async def random_wikipedia_article(self, ctx: commands.Context, lang: str = "pt"):
         """Envia um artigo aleatório da Wikipédia no idioma especificado, se possível."""
         lang = lang.lower()
-        user = ctx.author.name
+        user: str = ctx.author.name
         logging.info(f"[randomwiki: {user}] Solicitando artigo em '{lang}'")
         # Português, Inglês, Espanhol, Francês, Alemão, Italiano, Japonês, Russo, Chinês e Bósnio
         supported_langs: set[str] = {"pt", "en", "es", "fr", "de", "it", "ja", "ru", "zh", "ba"}
 
         if lang not in supported_langs:
-            e: str = await self.bot.get_random_emoji_string()
+            emoji: str = await self.bot.get_random_emoji_string()
             langs: str = f"{', '.join(supported_langs)}"
             logging.warning(f"[randomwiki: {user}] Idioma inválido: '{lang}'")
-            await ctx.send(f"{e} O idioma '{lang}' não está na lista de idiomas válidos. ({langs})")
+            await ctx.send(f"{emoji} O idioma '{lang}' não está na lista de idiomas válidos. ({langs})")
             return
 
         api_url: str = f"https://{lang}.wikipedia.org/w/api.php"
@@ -55,3 +57,60 @@ class FunCommands(commands.Cog):
         except Exception as e:
             logging.error(f"[randomwiki: {user}] Erro inesperado: {e}")
             await ctx.send(f"{self.bot.get_random_emoji_string()} Ocorreu erro ao tentar buscar artigo.")
+
+    # ---------------------------------------------------------------------------------------------------------------- #
+    def google_search_links(self, query: str, num_results: int = 5) -> list[str]:
+        logging.info(f"[google_search_links] Query: '{query}'")
+        try:
+            results_raw = search(query, num_results, safe="off")
+            results_string = [str(r) for r in results_raw]
+            results_filtered = [r for r in results_string if r.startswith("http")]
+
+            logging.info(f"[google_search_links] Resultados brutos: {results_string}")
+            logging.info(f"[google_search_links] Resultados filtrados: {results_filtered}")
+
+            return results_filtered
+
+        except Exception as e:
+            logging.error(f"[google_search_links] Erro na busca: {e}")
+            return []
+
+    # ---------------------------------------------------------------------------------------------------------------- #
+    @commands.hybrid_command(name="lucky", description="I'm feeling lucky! (retorna o primeiro resultado da pesquisa)")
+    async def lucky_search(self, ctx: commands.Context, *, query: str):
+        user: str = ctx.author.name
+        try:
+            results = self.google_search_links(query, num_results=5)
+
+            if not results:
+                logging.error(f"[lucky_search: {user}] Nada encontrado.")
+                await ctx.send("Não encontrei nada.")
+                return
+
+            await ctx.send(results[0])
+
+        except Exception as e:
+            logging.error(f"[lucky_search: {user}] Erro inesperado: {e}")
+            await ctx.send("Erro ao buscar resultado.")
+
+    # ---------------------------------------------------------------------------------------------------------------- #
+    @commands.hybrid_command(name="search", description="Pesquisar algo no Google.")
+    async def search_stuff(self, ctx: commands.Context, *, query: str):
+        user: str = ctx.author.name
+        try:
+            results = self.google_search_links(query, 13)
+
+            if not results:
+                logging.error(f"[search_stuff: {user}] Nada encontrado.")
+                await ctx.send("Não encontrei nada...")
+                return
+
+            results = results[:10]
+
+            message: str = f"{len(results)} resultados encontrados:\n"
+            message += "\n".join(f"{c}. <{r}>" for c, r in enumerate(results))
+            await ctx.send(message)
+
+        except Exception as e:
+            logging.error(f"[search_stuff: {user}] Erro inesperado: {e}")
+            await ctx.send("Erro ao buscar resultado.")
