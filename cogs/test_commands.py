@@ -1,4 +1,3 @@
-from doctest import debug_script
 from discord.ext import commands
 import logging
 

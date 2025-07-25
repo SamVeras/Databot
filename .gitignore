@@ -36,3 +36,4 @@ Thumbs.db
 scraped_data/
 *.csv
 *.log
+pinned_ids_*.json

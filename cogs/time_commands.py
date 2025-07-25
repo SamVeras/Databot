@@ -1,10 +1,6 @@
 from discord.ext import commands
-import logging
-import parsedatetime
 from datetime import datetime
-import discord
-import asyncio
-import pytz
+import logging, parsedatetime, discord, asyncio, pytz
 
 
 class TimeCommands(commands.Cog):

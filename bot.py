@@ -1,20 +1,14 @@
+from discord.ext import commands
 from config import MONGO_URI, GUILD_ID, REMINDER_CHANNEL_NAME
-import discord
 from cogs.test_commands import TestCommands
 from cogs.database_commands import DatabaseCommands
 from cogs.admin_commands import AdminCommands
 from cogs.fun_commands import FunCommands
 from cogs.time_commands import TimeCommands
-import time
-import motor.motor_asyncio
-from discord.ext import commands
-import logging
 from datetime import datetime
-import asyncio
-import random
-import pytz
+import time, motor.motor_asyncio, logging, discord, asyncio, random, pytz
 
-cog_list = [TestCommands, DatabaseCommands, AdminCommands, FunCommands, TimeCommands]
+COG_LIST = [TestCommands, DatabaseCommands, AdminCommands, FunCommands, TimeCommands]
 
 
 class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
@@ -111,7 +105,7 @@ class Lad(commands.Bot):  # Lad = Bot (Lad)rão de Dados :P
     # ---------------------------------------------------------------------------------------------------------------- #
     async def setup_hook(self) -> None:
         """Configura os cogs do bot."""
-        for cog in cog_list:
+        for cog in COG_LIST:
             await self.add_cog(cog(self))
             logging.info(f"[setup_hook] Cog {cog.__name__} carregado com sucesso.")
 

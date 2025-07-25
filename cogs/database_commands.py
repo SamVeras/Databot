@@ -1,9 +1,7 @@
 from discord.ext import commands
-import logging
 from config import MSG_QUEUE_SIZE, WORKERS_COUNT, BULK_SIZE
-import discord
-import asyncio
 from pymongo import UpdateOne
+import discord, logging, asyncio
 
 
 class DatabaseCommands(commands.Cog):
@@ -419,28 +417,41 @@ class DatabaseCommands(commands.Cog):
         import os, json
         from random import shuffle
 
-        PINNED_IDS_FILE = "pinned_ids.json"
         username: str = ctx.author.name
 
+        if not ctx.guild:
+            logging.error([f"[random_fix_nr: {username}] Tentativa de rodar comando fora de servidor."])
+            await ctx.send("Este comando só pode ser usado em servidores.")
+            return
+
+        guild_id: int = ctx.guild.id
+        pinned_file = f"pinned_ids_{guild_id}.json"
+
         def load_pinned_ids() -> dict[str, list[str]]:
-            if os.path.exists(PINNED_IDS_FILE):
-                with open(PINNED_IDS_FILE, "r", encoding="utf-8") as f:
+            if os.path.exists(pinned_file):
+                with open(pinned_file, "r", encoding="utf-8") as f:
                     return json.load(f)
             return {"unused": [], "used": []}
 
         def save_pinned_ids(data: dict[str, list[str]]) -> None:
-            with open(PINNED_IDS_FILE, "w", encoding="utf-8") as f:
+            with open(pinned_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
 
-        logging.info(f"[random_fix_nr: {username}] Buscando mensagem fixada aleatória sem repetição...")
+        logging.info(f"[random_fix_nr: {username}] Buscando mensagem fixada aleatória sem repetição (server: {guild_id})...")
 
         try:
             ids_data = load_pinned_ids()
+
             if not ids_data["unused"]:  # unused vazio, repopular
                 logging.info(f"[random_fix_nr: {username}] Lista de mensagens esvaziada. Repopulando...")
-                cursor = self.collection.find({"is_pinned": True}, {"message_id": 1})
+
+                cursor = self.collection.find(
+                    {"is_pinned": True, "guild.id": guild_id},
+                    {"message_id": 1},
+                )
                 pinned_ids = [str(doc["message_id"]) async for doc in cursor]
                 shuffle(pinned_ids)
+
                 ids_data = {"unused": pinned_ids, "used": []}
                 save_pinned_ids(ids_data)
 
@@ -448,22 +459,17 @@ class DatabaseCommands(commands.Cog):
             ids_data["used"].append(msg_id)
             save_pinned_ids(ids_data)
 
-            message = await self.collection.find_one({"message_id": int(msg_id)})
+            message = await self.collection.find_one({"message_id": int(msg_id), "guild.id": guild_id})
+
             if not message:
                 await ctx.send("Mensagem não encontrada no banco.")
                 return
+
             await self.show_message(message, ctx)
+
         except Exception as e:
             logging.error(f"[randomfix: {username}] Erro: {e}")
             await ctx.send("Erro ao buscar mensagem fixada.")
-
-        # Queremos:
-        # 1. Pegar todas as mensagens com 'is_pinned' verdadeiro
-        # 2. Colocar todas as IDs em uma lista
-        # 3. Dar shuffle nessa lista
-        # 4. Guardar essa lista (pode ser um .json, ou até um .txt onde cada linha é uma ID)
-        # 5. Quando o usuário usa o comando, nós damos "pop" nessa lista (talvez comentando ("#") a ID utilizada?)
-        # 6. Se o usuário usar o comando e a lista estiver vazia (leia, todas as ids comentadas ou algo assim) nós repopulamos
 
     # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="fullstats", description="Mostrar estatísticas do banco de dados.")

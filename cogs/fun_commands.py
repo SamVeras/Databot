@@ -1,7 +1,6 @@
 from discord.ext import commands
-from googlesearch import search, SearchResult
+from googlesearch import search
 import logging
-import discord
 
 
 class FunCommands(commands.Cog):
