@@ -165,21 +165,19 @@ class DatabaseCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def scrape_channel(self, ctx: commands.Context) -> None:
         """Coletar dados do canal e salvar no banco de dados."""
+        cname = getattr(ctx.channel, "name", "desconhecido")
+        cid = getattr(ctx.channel, "id", "desconhecido")
+        gname = getattr(ctx.guild, "name", "desconhecido")
+        gid = getattr(ctx.guild, "id", "desconhecido")
+        logging.info(f"[scrape_channel: #{cname}] Iniciando scraping no canal: #{cname} (ID: {cid}) em {gname} (ID: {gid})")
+
         try:
             await ctx.send("Iniciando scraping no canal...", ephemeral=True)
-
-            cname = getattr(ctx.channel, "name", "desconhecido")
-            cid = getattr(ctx.channel, "id", "desconhecido")
-            gname = getattr(ctx.guild, "name", "desconhecido")
-            gid = getattr(ctx.guild, "id", "desconhecido")
-            aname = getattr(ctx.author, "name", "desconhecido")
-            aid = getattr(ctx.author, "id", "desconhecido")
-            logging.info(f"[scrape_channel: #{cname}] Iniciando scraping no canal: #{cname} (ID: {cid}) em {gname} (ID: {gid}) ({aname} - ID: {aid})")
-
             await self.mongo_client.admin.command("ping")
             await self.collection.create_index("message_id", unique=True)
             logging.info(f"[scrape_channel: #{cname}] Conexão com MongoDB estabelecida")
         except Exception as e:
+            await ctx.send("Falha ao iniciar scraping.", ephemeral=True)
             logging.error(f"[scrape_channel: #{cname}] Erro de conexão com MongoDB: {e}")
             return
 
@@ -389,12 +387,14 @@ class DatabaseCommands(commands.Cog):
             await ctx.send("Erro ao tentar buscar uma mensagem aleatória.")
 
     # ---------------------------------------------------------------------------------------------------------------- #
-    @commands.hybrid_command(name="randomfix", description="Mostrar uma mensagem fixada aleatória do banco de dados (pode especificar canal).")
-    async def show_random_fix_message(self, ctx: commands.Context, channel: discord.TextChannel | None = None) -> None:
+    @commands.hybrid_command(name="randfix", description="Mostrar uma mensagem fixada aleatória do banco de dados (pode especificar canal).")
+    async def random_fix_message(self, ctx: commands.Context, channel: discord.TextChannel | None = None) -> None:
         """Mostrar uma mensagem fixada aleatória do banco de dados, opcionalmente filtrando por canal."""
-        logging.info(f"[show_random_fix_message: {ctx.author.name}] Mostrando mensagem fixada aleatória...")
+        from typing import Any
+
+        logging.info(f"[random_fix_message: {ctx.author.name}] Mostrando mensagem fixada aleatória...")
         try:
-            match = {"is_pinned": True}
+            match: dict[str, Any] = {"is_pinned": True}
             if channel:
                 match["channel.id"] = channel.id
 
@@ -410,8 +410,60 @@ class DatabaseCommands(commands.Cog):
             await self.show_message(message, ctx)
 
         except Exception as e:
-            logging.error(f"[show_random_fix_message: {ctx.author.name}] Erro ao mostrar mensagem fixada aleatória: {e}")
+            logging.error(f"[random_fix_message: {ctx.author.name}] Erro ao mostrar mensagem fixada aleatória: {e}")
             await ctx.send("Erro ao tentar buscar uma mensagem fixada aleatória.")
+
+    # ---------------------------------------------------------------------------------------------------------------- #
+    @commands.hybrid_command(name="randomfix", description="Mostra uma mensagem fixada aleatória do banco de dados.")
+    async def random_fix_nr(self, ctx: commands.Context) -> None:
+        import os, json
+        from random import shuffle
+
+        PINNED_IDS_FILE = "pinned_ids.json"
+        username: str = ctx.author.name
+
+        def load_pinned_ids() -> dict[str, list[str]]:
+            if os.path.exists(PINNED_IDS_FILE):
+                with open(PINNED_IDS_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            return {"unused": [], "used": []}
+
+        def save_pinned_ids(data: dict[str, list[str]]) -> None:
+            with open(PINNED_IDS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+
+        logging.info(f"[random_fix_nr: {username}] Buscando mensagem fixada aleatória sem repetição...")
+
+        try:
+            ids_data = load_pinned_ids()
+            if not ids_data["unused"]:  # unused vazio, repopular
+                logging.info(f"[random_fix_nr: {username}] Lista de mensagens esvaziada. Repopulando...")
+                cursor = self.collection.find({"is_pinned": True}, {"message_id": 1})
+                pinned_ids = [str(doc["message_id"]) async for doc in cursor]
+                shuffle(pinned_ids)
+                ids_data = {"unused": pinned_ids, "used": []}
+                save_pinned_ids(ids_data)
+
+            msg_id = ids_data["unused"].pop(0)
+            ids_data["used"].append(msg_id)
+            save_pinned_ids(ids_data)
+
+            message = await self.collection.find_one({"message_id": int(msg_id)})
+            if not message:
+                await ctx.send("Mensagem não encontrada no banco.")
+                return
+            await self.show_message(message, ctx)
+        except Exception as e:
+            logging.error(f"[randomfix: {username}] Erro: {e}")
+            await ctx.send("Erro ao buscar mensagem fixada.")
+
+        # Queremos:
+        # 1. Pegar todas as mensagens com 'is_pinned' verdadeiro
+        # 2. Colocar todas as IDs em uma lista
+        # 3. Dar shuffle nessa lista
+        # 4. Guardar essa lista (pode ser um .json, ou até um .txt onde cada linha é uma ID)
+        # 5. Quando o usuário usa o comando, nós damos "pop" nessa lista (talvez comentando ("#") a ID utilizada?)
+        # 6. Se o usuário usar o comando e a lista estiver vazia (leia, todas as ids comentadas ou algo assim) nós repopulamos
 
     # ---------------------------------------------------------------------------------------------------------------- #
     @commands.hybrid_command(name="fullstats", description="Mostrar estatísticas do banco de dados.")
@@ -472,9 +524,11 @@ class DatabaseCommands(commands.Cog):
     @commands.hybrid_command(name="mystats", description="Mostrar estatísticas pessoais do banco de dados.")
     async def show_my_stats(self, ctx: commands.Context) -> None:
         """Mostrar estatísticas pessoais do banco de dados no servidor."""
-        logging.info(f"[show_my_stats: {ctx.author.name}] Mostrando estatísticas pessoais {ctx.guild.name} ({ctx.guild.id})...")
+        gname = getattr(ctx.guild, "name", "desconhecido")
+        gid = getattr(ctx.guild, "id", "desconhecido")
+        logging.info(f"[show_my_stats: {ctx.author.name}] Mostrando estatísticas pessoais {gname} ({gid})...")
 
-        total_messages: int = await self.collection.count_documents({"author.id": ctx.author.id, "guild.id": ctx.guild.id})
+        total_messages: int = await self.collection.count_documents({"author.id": ctx.author.id, "guild.id": gid})
         message: str = ""
 
         if total_messages == 0:
@@ -482,7 +536,7 @@ class DatabaseCommands(commands.Cog):
 
         else:
             total_messages_str = f"{total_messages:,}".replace(",", ".")
-            total_server_messages: int = await self.collection.count_documents({"guild.id": ctx.guild.id})
+            total_server_messages: int = await self.collection.count_documents({"guild.id": gid})
             user_percentage: float = (total_messages / total_server_messages) * 100
             message = f"Você tem {total_messages_str} mensagens no banco de dados. Isso é {user_percentage:.2f}% do total de mensagens do servidor."
 
